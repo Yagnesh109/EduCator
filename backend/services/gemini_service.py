@@ -41,6 +41,7 @@ def call_gemini(prompt):
         "generationConfig": {
             "temperature": 0.3,
             "maxOutputTokens": GEMINI_MAX_TOKENS,
+            "responseMimeType": "application/json",
         },
     }
     payload_bytes = json.dumps(payload).encode("utf-8")

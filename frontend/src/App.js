@@ -118,7 +118,6 @@ function App() {
                     Lets Start
                   </button>
                 </div>
-                {message && <p className="message">{message}</p>}
               </section>
             </main>
           }

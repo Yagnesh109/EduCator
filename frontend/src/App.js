@@ -9,7 +9,6 @@ import Login from "./components/auth/Login";
 import UploadPage from "./components/upload/UploadPage";
 
 function App() {
-  const [message, setMessage] = useState("");
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const navigate = useNavigate();

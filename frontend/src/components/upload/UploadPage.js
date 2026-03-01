@@ -220,14 +220,14 @@ function UploadPage() {
   };
 
   const extractOptionKey = (value) => {
-    const match = String(value || "").trim().match(/^([A-Da-d])(?:[\).\:\-\s]|$)/);
+    const match = String(value || "").trim().match(/^([A-Da-d])(?:[).:\s-]|$)/);
     return match ? match[1].toUpperCase() : "";
   };
 
   const normalizeOptionText = (value) =>
     String(value || "")
       .trim()
-      .replace(/^[A-Da-d](?:[\).\:\-\s]+|$)/, "")
+      .replace(/^[A-Da-d](?:[).:\s-]+|$)/, "")
       .toLowerCase();
 
   const isCorrectOption = (option, answer) => {

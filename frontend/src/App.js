@@ -24,16 +24,6 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  const fetchMessage = async () => {
-    try {
-      const response = await fetch("http://127.0.0.1:5000/api/message");
-      const data = await response.json();
-      setMessage(data.message);
-    } catch (error) {
-      console.error("Error fetching message:", error);
-    }
-  };
-
   const openUpload = () => {
     if (!user) {
       toast.info("Login first");

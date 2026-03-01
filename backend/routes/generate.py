@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Blueprint, jsonify, request
 
 from services.mcq_session import store_mcq_session
-from services.openrouter_service import generate_items_from_source, generate_summary_from_source
+from services.gemini_service import generate_items_from_source, generate_summary_from_source
 from utils.extractors import extract_docx_text, extract_pdf_text, extract_pptx_text, extract_txt_text
 
 generate_bp = Blueprint("generate", __name__)

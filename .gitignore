@@ -9,14 +9,19 @@ pnpm-debug.log*
 # Python
 __pycache__/
 *.pyc
+*.pyo
 backend/venv/
 .venv/
+.pytest_cache/
 
 # Environment & secrets
 **/.env
+**/.env.*
 backend/*.json
 backend/serviceAccountKey.json
 backend/*firebase-adminsdk*.json
+backend/temp_uploads/
+backend/temp_uploads/**
 
 # OS / IDE
 .DS_Store
@@ -26,5 +31,8 @@ Thumbs.db
 
 # Build outputs
 frontend/build/
+.dist/
 dist/
+.cache/
+coverage/
 *.log

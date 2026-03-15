@@ -29,6 +29,8 @@ from routes.misc import router as misc_router  # noqa: E402
 from routes.qa import router as qa_router  # noqa: E402
 from routes.recommend import router as recommend_router  # noqa: E402
 from routes.tts import router as tts_router  # noqa: E402
+from routes.tools import router as tools_router  # noqa: E402
+from routes.translate import router as translate_router  # noqa: E402
 from routes.verify import router as verify_router  # noqa: E402
 from routes.voice_qa import router as voice_qa_router  # noqa: E402
 
@@ -43,6 +45,7 @@ app.add_middleware(
 )
 
 app.include_router(misc_router)
+app.include_router(tools_router)
 app.include_router(generate_router)
 app.include_router(verify_router)
 app.include_router(history_router)
@@ -50,6 +53,7 @@ app.include_router(tts_router)
 app.include_router(diag_router)
 app.include_router(export_router)
 app.include_router(recommend_router)
+app.include_router(translate_router)
 app.include_router(qa_router)
 app.include_router(voice_qa_router)
 

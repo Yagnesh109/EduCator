@@ -1,6 +1,17 @@
 function KnowledgeGapSection({ result, loading, onAnalyze }) {
   const weakTopics = Array.isArray(result?.weakTopics) ? result.weakTopics : [];
   const recommendedStudy = Array.isArray(result?.recommendedStudy) ? result.recommendedStudy : [];
+  const conceptExplanations = Array.isArray(result?.conceptExplanations) ? result.conceptExplanations : [];
+  const formatBullets = (value) => {
+    const text = String(value || "").trim();
+    if (!text) return [];
+    return text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => line.replace(/^-\\s*/, "").trim())
+      .filter(Boolean);
+  };
 
   return (
     <section className="result-section">
@@ -17,6 +28,31 @@ function KnowledgeGapSection({ result, loading, onAnalyze }) {
         <p className="topic-empty-text">No weak topics detected yet. Complete and analyze your quiz attempts.</p>
       )}
 
+      {conceptExplanations.length > 0 && (
+        <>
+          <h4>Concept Explanations (Based on Wrong Answers)</h4>
+          <div className="history-flashcards">
+            {conceptExplanations.map((topicBlock) => (
+              <article key={topicBlock.topic} className="history-flashcard">
+                <p>
+                  <strong>{topicBlock.topic}</strong>
+                  {Number.isInteger(topicBlock.wrong) && topicBlock.wrong > 0 ? ` (missed ${topicBlock.wrong})` : ""}
+                </p>
+                {topicBlock.explanation ? (
+                  <ul className="result-options">
+                    {formatBullets(topicBlock.explanation).map((point) => (
+                      <li key={`${topicBlock.topic}-${point}`}>{point}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="topic-empty-text">No explanation available.</p>
+                )}
+              </article>
+            ))}
+          </div>
+        </>
+      )}
+
       {weakTopics.length > 0 && (
         <>
           <h4>Your Weak Areas</h4>
@@ -28,24 +64,27 @@ function KnowledgeGapSection({ result, loading, onAnalyze }) {
             ))}
           </ul>
 
-          <h4>Recommended Study</h4>
-          <div className="history-flashcards">
-            {recommendedStudy.map((topicBlock) => (
-              <article key={topicBlock.topic} className="history-flashcard">
-                <p>
-                  <strong>{topicBlock.topic}</strong>
-                </p>
-                <p>
-                  Flashcards: {Array.isArray(topicBlock.flashcards) ? topicBlock.flashcards.length : 0} | Revision MCQs:{" "}
-                  {Array.isArray(topicBlock.mcqs) ? topicBlock.mcqs.length : 0}
-                </p>
-                {topicBlock.summary && <p>{topicBlock.summary}</p>}
-                {topicBlock.audioBase64 && (
-                  <audio controls src={`data:audio/mpeg;base64,${topicBlock.audioBase64}`} style={{ width: "100%" }} />
-                )}
-              </article>
-            ))}
-          </div>
+          {conceptExplanations.length === 0 && (
+            <>
+              <h4>Recommended Study</h4>
+              <div className="history-flashcards">
+                {recommendedStudy.map((topicBlock) => (
+                  <article key={topicBlock.topic} className="history-flashcard">
+                    <p>
+                      <strong>{topicBlock.topic}</strong>
+                    </p>
+                    {topicBlock.summary && (
+                      <ul className="result-options">
+                        {formatBullets(topicBlock.summary).map((point) => (
+                          <li key={`${topicBlock.topic}-${point}`}>{point}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
         </>
       )}
     </section>

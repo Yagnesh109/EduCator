@@ -19,9 +19,13 @@ REFILL_POOL_SIZE = int(os.getenv("REFILL_POOL_SIZE", "10"))
 from services.gemini_service import (
     OPENROUTER_API_KEY,
     OPENROUTER_FLASHCARDS_API_KEY,
+    OPENROUTER_FILL_IN_THE_BLANKS_KEY,
+    OPENROUTER_TRUE_FALSE_KEY,
     generate_items_from_source,
     generate_mcqs_from_source_openrouter,
     generate_flashcards_from_source_openrouter,
+    generate_fill_in_the_blanks_from_source_openrouter,
+    generate_true_false_from_source_openrouter,
     generate_summary_from_source,
 )
 from services.gemini_service import generate_study_set_from_source
@@ -261,7 +265,7 @@ def _fallback_flashcards(source_text, count=10):
         front = sentence
         if len(front) > 90:
             front = front[:87].rsplit(" ", 1)[0] + "..."
-        cards.append({"front": front, "back": sentence})
+        cards.append({"front": front, "back": sentence, "topic": "General"})
     return cards
 
 
@@ -323,7 +327,7 @@ def _generate_additional_items(source_text, existing_mcqs, existing_flashcards, 
 
     flashcard_instruction = (
         f"Create exactly {count} NEW flashcards from the provided content.\n"
-        "Each item must be: {\"front\":\"...\",\"back\":\"...\"}.\n"
+        "Each item must be: {\"front\":\"...\",\"back\":\"...\",\"topic\":\"...\"}.\n"
         "Do not repeat or rephrase these existing flashcard fronts:\n"
         f"{flashcard_block or '- None'}"
     )
@@ -344,27 +348,23 @@ def _generate_additional_items(source_text, existing_mcqs, existing_flashcards, 
 
 async def get_source_text_from_request(request: Request):
     form = await request.form()
-    text = str(form.get("text") or "").strip()
+    text_values = form.getlist("text") if hasattr(form, "getlist") else [form.get("text")]
+    texts = [str(value or "").strip() for value in text_values if str(value or "").strip()]
     upload = form.get("file")
-    file_id = str(form.get("fileId") or "").strip()
+    file_id_values = form.getlist("fileId") if hasattr(form, "getlist") else [form.get("fileId")]
+    file_ids = [str(value or "").strip() for value in file_id_values if str(value or "").strip()]
+    difficulty_raw = str(form.get("difficulty") or "").strip().lower()
+    difficulty = difficulty_raw if difficulty_raw in {"easy", "medium", "hard"} else "medium"
 
-    if text and (upload or file_id):
-        raise ValueError("Provide either text or file, not both")
-    if upload and file_id:
-        raise ValueError("Provide either file upload or fileId, not both")
+    combined_chunks = []
+    previews = []
+    file_meta = {"pdfFileName": "", "pdfSizeBytes": 0, "pptFileName": "", "pptSizeBytes": 0}
 
-    if text:
-        return text, {
-            "sourceType": "text",
-            "sourceText": text,
-            "sourcePreview": text[:300],
-            "pdfFileName": "",
-            "pdfSizeBytes": 0,
-            "pptFileName": "",
-            "pptSizeBytes": 0,
-        }
+    for txt in texts:
+        combined_chunks.append(txt)
+        previews.append(txt[:80] or "Text source")
 
-    if file_id:
+    for file_id in file_ids:
         path = _resolve_temp_upload(file_id)
         if not path or not os.path.exists(path):
             raise ValueError("Uploaded file not found. Please re-upload.")
@@ -376,47 +376,55 @@ async def get_source_text_from_request(request: Request):
         extracted_text, source_type = _extract_text_from_file_bytes(filename, data)
         if not extracted_text:
             raise ValueError("Unable to extract text from the uploaded file")
-        return extracted_text, {
-            "sourceType": source_type,
-            "sourceText": "",
-            "sourcePreview": filename,
-            "pdfFileName": filename if source_type == "pdf" else "",
-            "pdfSizeBytes": len(data) if source_type == "pdf" else 0,
-            "pptFileName": filename if source_type == "pptx" else "",
-            "pptSizeBytes": len(data) if source_type == "pptx" else 0,
-        }
+        combined_chunks.append(extracted_text)
+        previews.append(filename)
+        if source_type == "pdf" and not file_meta["pdfFileName"]:
+            file_meta["pdfFileName"] = filename
+            file_meta["pdfSizeBytes"] = len(data)
+        if source_type == "pptx" and not file_meta["pptFileName"]:
+            file_meta["pptFileName"] = filename
+            file_meta["pptSizeBytes"] = len(data)
 
     if upload and hasattr(upload, "filename"):
         filename = str(upload.filename or "uploaded.file")
         data = await upload.read()
         if not data:
             raise ValueError("Uploaded file is empty")
-
         extracted_text, source_type = _extract_text_from_file_bytes(filename, data)
-
         if not extracted_text:
             raise ValueError("Unable to extract text from the uploaded file")
+        combined_chunks.append(extracted_text)
+        previews.append(filename)
+        if source_type == "pdf" and not file_meta["pdfFileName"]:
+            file_meta["pdfFileName"] = filename
+            file_meta["pdfSizeBytes"] = len(data)
+        if source_type == "pptx" and not file_meta["pptFileName"]:
+            file_meta["pptFileName"] = filename
+            file_meta["pptSizeBytes"] = len(data)
 
-        return extracted_text, {
-            "sourceType": source_type,
-            "sourceText": "",
-            "sourcePreview": filename,
-            "pdfFileName": filename if source_type == "pdf" else "",
-            "pdfSizeBytes": len(data) if source_type == "pdf" else 0,
-            "pptFileName": filename if source_type == "pptx" else "",
-            "pptSizeBytes": len(data) if source_type == "pptx" else 0,
-        }
+    combined_text = "\n\n---\n\n".join([chunk for chunk in combined_chunks if chunk]).strip()
+    if not combined_text:
+        raise ValueError("Provide text or upload a file")
 
-    raise ValueError("Provide text or upload a file")
+    source_type = "multi" if (len(texts) + len(file_ids) + (1 if upload else 0)) > 1 else ("text" if texts else "file")
+    preview = ", ".join([p for p in previews[:4] if p]).strip()
+    return combined_text, {
+        "sourceType": source_type,
+        "sourceText": combined_text if source_type == "text" else "",
+        "sourcePreview": preview or "Multiple sources",
+        "difficulty": difficulty,
+        **file_meta,
+    }
 
 
 @router.post("/api/generate/study-set")
 async def generate_study_set(request: Request):
     try:
         initial_count = 10
-        source_text, _source_meta = await get_source_text_from_request(request)
+        source_text, source_meta = await get_source_text_from_request(request)
+        difficulty = str(source_meta.get("difficulty", "medium")).strip().lower() or "medium"
         try:
-            result = generate_study_set_from_source(source_text, expected_count=initial_count)
+            result = generate_study_set_from_source(source_text, expected_count=initial_count, difficulty=difficulty)
             mcqs = _normalize_mcq_items(result["mcqs"])
             mcq_set_id = store_mcq_session(mcqs)
             update_mcq_session(
@@ -436,16 +444,24 @@ async def generate_study_set(request: Request):
             # This keeps the endpoint resilient to occasional model formatting drift.
             pass
 
+        difficulty_hint = (
+            "Difficulty: easy = basic recall/definitions; medium = conceptual and moderately challenging; "
+            "hard = advanced reasoning, nuanced distractors, and deeper understanding.\n"
+            f"Selected difficulty: {difficulty}.\n"
+        )
+
         instructions = {
             "mcqs": (
+                f"{difficulty_hint}"
                 "Create exactly 10 MCQs from the provided content. "
                 "Each item must be: "
                 "{\"question\":\"...\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"answer\":\"...\",\"explanation\":\"...\",\"topic\":\"...\"}. "
                 "The explanation should briefly explain why the correct answer is right."
             ),
             "flashcards": (
+                f"{difficulty_hint}"
                 "Create exactly 10 flashcards from the provided content. "
-                "Each item must be: {\"front\":\"...\",\"back\":\"...\"}"
+                "Each item must be: {\"front\":\"...\",\"back\":\"...\",\"topic\":\"...\"}"
             ),
         }
 
@@ -499,11 +515,15 @@ async def generate_study_set(request: Request):
 async def generate_mcqs(request: Request):
     try:
         count = 10
-        source_text, _source_meta = await get_source_text_from_request(request)
+        source_text, source_meta = await get_source_text_from_request(request)
+        difficulty = str(source_meta.get("difficulty", "medium")).strip().lower() or "medium"
         if OPENROUTER_API_KEY:
-            mcqs = _normalize_mcq_items(generate_mcqs_from_source_openrouter(source_text, count))
+            mcqs = _normalize_mcq_items(generate_mcqs_from_source_openrouter(source_text, count, difficulty=difficulty))
         else:
             mcq_instruction = (
+                "Difficulty: easy = basic recall/definitions; medium = conceptual and moderately challenging; "
+                "hard = advanced reasoning, nuanced distractors, and deeper understanding.\n"
+                f"Selected difficulty: {difficulty}.\n\n"
                 f"Create exactly {count} MCQs from the provided content. "
                 "Each item must be: "
                 "{\"question\":\"...\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"answer\":\"...\",\"explanation\":\"...\",\"topic\":\"...\"}. "
@@ -533,13 +553,16 @@ async def generate_mcqs(request: Request):
 async def generate_flashcards(request: Request):
     try:
         count = 10
-        source_text, _source_meta = await get_source_text_from_request(request)
+        source_text, source_meta = await get_source_text_from_request(request)
+        difficulty = str(source_meta.get("difficulty", "medium")).strip().lower() or "medium"
         if OPENROUTER_FLASHCARDS_API_KEY:
-            flashcards = generate_flashcards_from_source_openrouter(source_text, count)
+            flashcards = generate_flashcards_from_source_openrouter(source_text, count, difficulty=difficulty)
         else:
             flashcard_instruction = (
+                "Difficulty: easy = direct definitions; medium = conceptual Q/A; hard = nuanced, tricky, and application-focused.\n"
+                f"Selected difficulty: {difficulty}.\n\n"
                 f"Create exactly {count} flashcards from the provided content. "
-                "Each item must be: {\"front\":\"...\",\"back\":\"...\"}."
+                "Each item must be: {\"front\":\"...\",\"back\":\"...\",\"topic\":\"...\"}."
             )
             flashcards = generate_items_from_source(source_text, flashcard_instruction, count)
         return {"flashcards": flashcards}
@@ -553,6 +576,42 @@ async def generate_flashcards(request: Request):
             return {"flashcards": flashcards, "fallback": True, "warning": str(exc)}
         except Exception:
             return JSONResponse(content={"error": str(exc)}, status_code=502)
+    except Exception as exc:
+        return JSONResponse(content={"error": f"Unexpected server error: {exc}"}, status_code=500)
+
+
+@router.post("/api/generate/fill-blanks")
+async def generate_fill_blanks(request: Request):
+    try:
+        count = 10
+        source_text, source_meta = await get_source_text_from_request(request)
+        difficulty = str(source_meta.get("difficulty", "medium")).strip().lower() or "medium"
+        if not OPENROUTER_FILL_IN_THE_BLANKS_KEY:
+            raise RuntimeError("OPENROUTER_FILL_IN_THE_BLANKS_KEY is missing in backend environment")
+        items = generate_fill_in_the_blanks_from_source_openrouter(source_text, count, difficulty=difficulty)
+        return {"fillBlanks": items}
+    except ValueError as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=400)
+    except RuntimeError as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=502)
+    except Exception as exc:
+        return JSONResponse(content={"error": f"Unexpected server error: {exc}"}, status_code=500)
+
+
+@router.post("/api/generate/true-false")
+async def generate_true_false(request: Request):
+    try:
+        count = 10
+        source_text, source_meta = await get_source_text_from_request(request)
+        difficulty = str(source_meta.get("difficulty", "medium")).strip().lower() or "medium"
+        if not OPENROUTER_TRUE_FALSE_KEY:
+            raise RuntimeError("OPENROUTER_TRUE_FALSE_KEY is missing in backend environment")
+        items = generate_true_false_from_source_openrouter(source_text, count, difficulty=difficulty)
+        return {"trueFalse": items}
+    except ValueError as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=400)
+    except RuntimeError as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=502)
     except Exception as exc:
         return JSONResponse(content={"error": f"Unexpected server error: {exc}"}, status_code=500)
 

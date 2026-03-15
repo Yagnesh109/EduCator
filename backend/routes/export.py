@@ -184,10 +184,31 @@ def _build_pdf_bytes(entries):
     return output.getvalue()
 
 
-def _render_csv(mcqs, flashcards):
+def _render_csv(mcqs, flashcards, fill_blanks, true_false):
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["type", "index", "question", "option_a", "option_b", "option_c", "option_d", "answer", "front", "back"])
+    writer.writerow(
+        [
+            "type",
+            "index",
+            "question",
+            "option_a",
+            "option_b",
+            "option_c",
+            "option_d",
+            "answer",
+            "front",
+            "back",
+            "blank_prompt",
+            "blank_answer",
+            "blank_explanation",
+            "blank_topic",
+            "tf_statement",
+            "tf_answer",
+            "tf_explanation",
+            "tf_topic",
+        ]
+    )
 
     for idx, item in enumerate(mcqs, start=1):
         options = item.get("options") if isinstance(item, dict) else []
@@ -203,6 +224,14 @@ def _render_csv(mcqs, flashcards):
                 padded[2],
                 padded[3],
                 _as_text(item.get("answer") if isinstance(item, dict) else ""),
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
                 "",
                 "",
             ]
@@ -221,13 +250,69 @@ def _render_csv(mcqs, flashcards):
                 "",
                 _as_text(item.get("front") if isinstance(item, dict) else ""),
                 _as_text(item.get("back") if isinstance(item, dict) else ""),
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+            ]
+        )
+
+    for idx, item in enumerate(fill_blanks, start=1):
+        writer.writerow(
+            [
+                "fill_blank",
+                idx,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                _as_text(item.get("prompt") if isinstance(item, dict) else ""),
+                _as_text(item.get("answer") if isinstance(item, dict) else ""),
+                _as_text(item.get("explanation") if isinstance(item, dict) else ""),
+                _as_text(item.get("topic") if isinstance(item, dict) else ""),
+                "",
+                "",
+                "",
+                "",
+            ]
+        )
+
+    for idx, item in enumerate(true_false, start=1):
+        writer.writerow(
+            [
+                "true_false",
+                idx,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                _as_text(item.get("statement") if isinstance(item, dict) else ""),
+                str(bool(item.get("answer"))).lower() if isinstance(item, dict) else "",
+                _as_text(item.get("explanation") if isinstance(item, dict) else ""),
+                _as_text(item.get("topic") if isinstance(item, dict) else ""),
             ]
         )
 
     return output.getvalue().encode("utf-8")
 
 
-def _render_quiz_text(mcqs, flashcards, summary):
+def _render_quiz_text(mcqs, flashcards, fill_blanks, true_false, summary):
     lines = ["EduCator Quiz Export", ""]
     if summary:
         lines.extend(["Summary:", _as_text(summary), ""])
@@ -258,10 +343,43 @@ def _render_quiz_text(mcqs, flashcards, summary):
             lines.append(f"   Back: {back}")
             lines.append("")
 
+    if fill_blanks:
+        lines.append("Fill in the Blanks")
+        lines.append("")
+        for idx, item in enumerate(fill_blanks, start=1):
+            prompt = _as_text(item.get("prompt") if isinstance(item, dict) else "")
+            answer = _as_text(item.get("answer") if isinstance(item, dict) else "")
+            explanation = _as_text(item.get("explanation") if isinstance(item, dict) else "")
+            topic = _as_text(item.get("topic") if isinstance(item, dict) else "")
+            lines.append(f"{idx}. {prompt}")
+            if topic:
+                lines.append(f"   Topic: {topic}")
+            lines.append(f"   Answer: {answer}")
+            if explanation:
+                lines.append(f"   Why: {explanation}")
+            lines.append("")
+
+    if true_false:
+        lines.append("True / False")
+        lines.append("")
+        for idx, item in enumerate(true_false, start=1):
+            statement = _as_text(item.get("statement") if isinstance(item, dict) else "")
+            answer = item.get("answer") if isinstance(item, dict) else ""
+            answer_text = "True" if bool(answer) else "False"
+            explanation = _as_text(item.get("explanation") if isinstance(item, dict) else "")
+            topic = _as_text(item.get("topic") if isinstance(item, dict) else "")
+            lines.append(f"{idx}. {statement}")
+            if topic:
+                lines.append(f"   Topic: {topic}")
+            lines.append(f"   Answer: {answer_text}")
+            if explanation:
+                lines.append(f"   Why: {explanation}")
+            lines.append("")
+
     return "\n".join(lines).encode("utf-8")
 
 
-def _render_pdf(mcqs, flashcards, summary):
+def _render_pdf(mcqs, flashcards, fill_blanks, true_false, summary):
     entries = [
         {
             "text": "EduCator Study Set",
@@ -273,7 +391,7 @@ def _render_pdf(mcqs, flashcards, summary):
             "after": 10,
         },
         {
-            "text": "MCQs + Flashcards Export",
+            "text": "Study Export",
             "font_size": 11,
             "align": "center",
             "color": "5C748B",
@@ -344,6 +462,64 @@ def _render_pdf(mcqs, flashcards, summary):
             entries.append({"text": f"{idx}. Question: {front}", "font_size": 11, "bold": True, "color": "3E2A12"})
             entries.append({"text": f"Answer: {back}", "font_size": 10, "color": "5C3B13", "indent": 64, "after": 6})
 
+    if fill_blanks:
+        entries.extend(
+            [
+                {"page_break": True},
+                {
+                    "text": "Fill in the Blanks",
+                    "font_size": 14,
+                    "bold": True,
+                    "color": "1A4F7A",
+                    "before": 4,
+                    "after": 6,
+                },
+            ]
+        )
+        for idx, item in enumerate(fill_blanks, start=1):
+            prompt = _as_text(item.get("prompt") if isinstance(item, dict) else "")
+            answer = _as_text(item.get("answer") if isinstance(item, dict) else "")
+            topic = _as_text(item.get("topic") if isinstance(item, dict) else "")
+            explanation = _as_text(item.get("explanation") if isinstance(item, dict) else "")
+            header = f"{idx}. {prompt}"
+            if topic:
+                header = f"{header} ({topic})"
+            entries.append({"text": header, "font_size": 11, "bold": True, "color": "102A43", "after": 2})
+            entries.append(
+                {"text": f"Answer: {answer}", "font_size": 10, "bold": True, "color": "0F7A5B", "indent": 64}
+            )
+            if explanation:
+                entries.append({"text": f"Why: {explanation}", "font_size": 10, "color": "334E68", "indent": 64, "after": 6})
+            else:
+                entries.append({"text": "", "font_size": 10, "after": 6})
+
+    if true_false:
+        entries.extend(
+            [
+                {"page_break": True},
+                {"text": "True / False", "font_size": 14, "bold": True, "color": "1A4F7A", "before": 4, "after": 6},
+            ]
+        )
+        for idx, item in enumerate(true_false, start=1):
+            statement = _as_text(item.get("statement") if isinstance(item, dict) else "")
+            answer = item.get("answer") if isinstance(item, dict) else False
+            answer_text = "True" if bool(answer) else "False"
+            topic = _as_text(item.get("topic") if isinstance(item, dict) else "")
+            explanation = _as_text(item.get("explanation") if isinstance(item, dict) else "")
+            header = f"{idx}. {statement}"
+            if topic:
+                header = f"{header} ({topic})"
+            entries.append({"text": header, "font_size": 11, "bold": True, "color": "102A43", "after": 2})
+            entries.append(
+                {"text": f"Answer: {answer_text}", "font_size": 10, "bold": True, "color": "0F7A5B", "indent": 64}
+            )
+            if explanation:
+                entries.append(
+                    {"text": f"Why: {explanation}", "font_size": 10, "color": "334E68", "indent": 64, "after": 6}
+                )
+            else:
+                entries.append({"text": "", "font_size": 10, "after": 6})
+
     return _build_pdf_bytes(entries)
 
 
@@ -357,24 +533,28 @@ def export_study_set(export_format: str, payload: dict = Body(default=None)):
 
         mcqs = payload.get("mcqs")
         flashcards = payload.get("flashcards")
+        fill_blanks = payload.get("fillBlanks")
+        true_false = payload.get("trueFalse")
         summary = _as_text(payload.get("summary"))
         title = _safe_filename_part(payload.get("title") or "study_set")
 
         mcqs = mcqs if isinstance(mcqs, list) else []
         flashcards = flashcards if isinstance(flashcards, list) else []
-        if not mcqs and not flashcards and not summary:
+        fill_blanks = fill_blanks if isinstance(fill_blanks, list) else []
+        true_false = true_false if isinstance(true_false, list) else []
+        if not mcqs and not flashcards and not fill_blanks and not true_false and not summary:
             return JSONResponse(content={"error": "No study content found to export"}, status_code=400)
 
         if export_format == "csv":
-            body = _render_csv(mcqs, flashcards)
+            body = _render_csv(mcqs, flashcards, fill_blanks, true_false)
             media_type = "text/csv; charset=utf-8"
             extension = "csv"
         elif export_format == "quiz":
-            body = _render_quiz_text(mcqs, flashcards, summary)
+            body = _render_quiz_text(mcqs, flashcards, fill_blanks, true_false, summary)
             media_type = "text/plain; charset=utf-8"
             extension = "quiz.txt"
         else:
-            body = _render_pdf(mcqs, flashcards, summary)
+            body = _render_pdf(mcqs, flashcards, fill_blanks, true_false, summary)
             media_type = "application/pdf"
             extension = "pdf"
 

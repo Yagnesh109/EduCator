@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { API_BASE } from "../../config/api";
@@ -7,6 +7,7 @@ import FlashcardSection from "./FlashcardSection";
 import ExportSection from "./ExportSection";
 import SummarySection from "./SummarySection";
 import KnowledgeGapSection from "./KnowledgeGapSection";
+import DifficultySelect, { normalizeDifficulty } from "./DifficultySelect";
 
 function StudySetPage({ mode }) {
   const location = useLocation();
@@ -43,12 +44,20 @@ function StudySetPage({ mode }) {
     }
     return [];
   };
-  const [mcqs] = useState(normalizeArray(routeState?.mcqs));
-  const [flashcards] = useState(normalizeArray(routeState?.flashcards));
+  const [mcqs, setMcqs] = useState(normalizeArray(routeState?.mcqs));
+  const [flashcards, setFlashcards] = useState(normalizeArray(routeState?.flashcards));
   const [summary] = useState(String(routeState?.summary || "").trim());
-  const [mcqSetId] = useState(String(routeState?.mcqSetId || "").trim());
+  const [mcqSetId, setMcqSetId] = useState(String(routeState?.mcqSetId || "").trim());
   const [sourceType] = useState(String(routeState?.sourceType || "").trim());
-  const [sourcePreview] = useState(String(routeState?.sourcePreview || "").trim());
+  const [sourceText] = useState(String(routeState?.sourceText || "").trim());
+  const [sourceFileId] = useState(String(routeState?.sourceFileId || "").trim());
+  const [difficultyByMode, setDifficultyByMode] = useState(() => {
+    const saved = routeState?.difficultyByMode && typeof routeState.difficultyByMode === "object" ? routeState.difficultyByMode : {};
+    return {
+      mcq: normalizeDifficulty(saved.mcq || saved.mcqs || "medium"),
+      flashcards: normalizeDifficulty(saved.flashcards || "medium"),
+    };
+  });
 
   const lockedMode = mode === "mcq" || mode === "flashcards";
   const initialTab = mode === "flashcards" ? "flashcards" : "mcq";
@@ -61,7 +70,8 @@ function StudySetPage({ mode }) {
   const [ttsLanguage, setTtsLanguage] = useState("en");
   const [knowledgeGapLoading, setKnowledgeGapLoading] = useState(false);
   const [knowledgeGapResult, setKnowledgeGapResult] = useState(null);
-  const [savingHistory, setSavingHistory] = useState(false);
+  const [flashcardKnown, setFlashcardKnown] = useState({});
+  const [regenerating, setRegenerating] = useState(false);
 
   const filteredMcqPairs = useMemo(() => mcqs.map((item, index) => ({ item, index })), [mcqs]);
   const filteredFlashcards = useMemo(() => flashcards, [flashcards]);
@@ -162,7 +172,122 @@ function StudySetPage({ mode }) {
   const totalCount = localMcqs.length;
   const correctCount = Object.values(localVerdicts).reduce((acc, item) => acc + (item?.isCorrect ? 1 : 0), 0);
   const allAnswered = totalCount > 0 && answeredCount === totalCount;
-  const overallCorrectCount = Object.values(mcqVerdicts).reduce((acc, item) => acc + (item?.isCorrect ? 1 : 0), 0);
+
+  const currentMode = lockedMode ? initialTab : activeTab;
+  const selectedDifficulty = difficultyByMode[currentMode] || "medium";
+
+  const updateSessionStorage = (partial) => {
+    const savedRaw = sessionStorage.getItem("educator_study_set");
+    let saved = {};
+    if (savedRaw) {
+      try {
+        saved = JSON.parse(savedRaw) || {};
+      } catch (_error) {
+        saved = {};
+      }
+    }
+    const next = { ...saved, ...partial };
+    sessionStorage.setItem("educator_study_set", JSON.stringify(next));
+  };
+
+  const buildSourceFormData = (difficulty) => {
+    const formData = new FormData();
+    if (Array.isArray(routeState?.sources) && routeState.sources.length > 0) {
+      let hasAny = false;
+      routeState.sources.forEach((item) => {
+        if (item?.mode === "file" && item?.fileId) {
+          formData.append("fileId", item.fileId);
+          hasAny = true;
+        } else if (item?.mode === "text" && item?.text) {
+          formData.append("text", item.text);
+          hasAny = true;
+        }
+      });
+      if (hasAny) {
+        formData.append("difficulty", normalizeDifficulty(difficulty));
+        return formData;
+      }
+    }
+    if (sourceFileId) {
+      formData.append("fileId", sourceFileId);
+    } else if (sourceText) {
+      formData.append("text", sourceText);
+    } else if (sourceType === "text" && routeState?.sourceText) {
+      formData.append("text", String(routeState.sourceText));
+    } else if (routeState?.sourceFileId) {
+      formData.append("fileId", String(routeState.sourceFileId));
+    } else {
+      return null;
+    }
+    formData.append("difficulty", normalizeDifficulty(difficulty));
+    return formData;
+  };
+
+  const regenerateForDifficulty = async (nextDifficulty) => {
+    const difficulty = normalizeDifficulty(nextDifficulty);
+    const baseForm = buildSourceFormData(difficulty);
+    if (!baseForm) {
+      toast.error("Source missing. Go back to Upload and generate again.");
+      return;
+    }
+
+    setRegenerating(true);
+    try {
+      if (currentMode === "mcq") {
+        const formData = baseForm;
+        formData.append("tool", "mcq");
+        formData.append("count", "20");
+        const response = await fetch(`${API_BASE}/api/tools/generate`, { method: "POST", body: formData });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.error || "Failed to regenerate MCQs");
+        }
+        const nextMcqs = Array.isArray(data?.mcqs) ? data.mcqs : [];
+        if (nextMcqs.length === 0) {
+          throw new Error("Server returned no MCQs");
+        }
+        const nextSetId = String(data?.mcqSetId || "").trim();
+        setMcqs(nextMcqs);
+        setMcqSetId(nextSetId);
+        setMcqVerdicts({});
+        setFlashcardKnown({});
+        setKnowledgeGapResult(null);
+        updateSessionStorage({
+          mcqs: nextMcqs,
+          mcqSetId: nextSetId,
+          difficultyByMode: { ...difficultyByMode, mcq: difficulty },
+        });
+        return;
+      }
+
+      if (currentMode === "flashcards") {
+        const formData = baseForm;
+        formData.append("tool", "flashcards");
+        formData.append("count", "20");
+        const response = await fetch(`${API_BASE}/api/tools/generate`, { method: "POST", body: formData });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.error || "Failed to regenerate flashcards");
+        }
+        const nextFlashcards = Array.isArray(data?.flashcards) ? data.flashcards : [];
+        if (nextFlashcards.length === 0) {
+          throw new Error("Server returned no flashcards");
+        }
+        setFlashcards(nextFlashcards);
+        setFlashcardKnown({});
+        setKnowledgeGapResult(null);
+        updateSessionStorage({
+          flashcards: nextFlashcards,
+          difficultyByMode: { ...difficultyByMode, flashcards: difficulty },
+        });
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || "Failed to regenerate");
+    } finally {
+      setRegenerating(false);
+    }
+  };
 
   const handleExport = async (format) => {
     try {
@@ -248,27 +373,40 @@ function StudySetPage({ mode }) {
 
   const handleAnalyzeKnowledgeGaps = async () => {
     try {
-      if (!mcqSetId) {
-        toast.error("MCQ session missing. Generate again.");
-        return;
-      }
       setKnowledgeGapLoading(true);
+      const payload =
+        currentMode === "mcq"
+          ? {
+              mode: "mcq",
+              items: mcqs,
+              attempts: Object.keys(mcqVerdicts).reduce((acc, indexKey) => {
+                const selected = mcqVerdicts[indexKey]?.selectedAnswer;
+                if (selected) {
+                  acc[indexKey] = selected;
+                }
+                return acc;
+              }, {}),
+            }
+          : {
+              mode: "flashcards",
+              items: flashcards,
+              attempts: flashcardKnown,
+            };
+
       const selectedAnswers = {};
-      Object.keys(mcqVerdicts).forEach((indexKey) => {
-        const selected = mcqVerdicts[indexKey]?.selectedAnswer;
-        if (selected) {
-          selectedAnswers[indexKey] = selected;
-        }
+      Object.keys(payload.attempts || {}).forEach((key) => {
+        selectedAnswers[key] = payload.attempts[key];
       });
 
-      const response = await fetch(`${API_BASE}/api/recommend/knowledge-gaps`, {
+      const response = await fetch(`${API_BASE}/api/recommend/knowledge-gaps/content`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mcqSetId,
-          selectedAnswers,
           threshold: 0.6,
           language: ttsLanguage,
+          mode: payload.mode,
+          items: payload.items,
+          attempts: selectedAnswers,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -286,42 +424,6 @@ function StudySetPage({ mode }) {
       toast.error(error.message || "Failed to analyze knowledge gaps");
     } finally {
       setKnowledgeGapLoading(false);
-    }
-  };
-
-
-  const handleSaveHistory = async () => {
-    try {
-      setSavingHistory(true);
-      const payload = {
-        sourceType: sourceType || "text",
-        sourcePreview: sourcePreview || "",
-        hadMcqs: mcqs.length > 0,
-        hadFlashcards: flashcards.length > 0,
-        mcqTotal: mcqs.length,
-        mcqCorrect: overallCorrectCount,
-        mcqs,
-        flashcards,
-        summary,
-      };
-      const response = await fetch(`${API_BASE}/api/history/session`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data?.error || "Failed to save history");
-      }
-      if (!data?.stored) {
-        throw new Error(data?.error || "History not stored");
-      }
-      toast.success("Saved to history");
-    } catch (error) {
-      console.error(error);
-      toast.error(error.message || "Failed to save history");
-    } finally {
-      setSavingHistory(false);
     }
   };
 
@@ -349,7 +451,23 @@ function StudySetPage({ mode }) {
         <header className="upload-header">
           <h1>Study Set Workspace</h1>
           <p>Review MCQs, flashcards, and summaries from your study set.</p>
+          <DifficultySelect
+            value={selectedDifficulty}
+            onChange={(value) => {
+              const next = normalizeDifficulty(value);
+              setDifficultyByMode((prev) => ({ ...prev, [currentMode]: next }));
+              regenerateForDifficulty(next);
+            }}
+            disabled={regenerating}
+          />
         </header>
+
+        <ExportSection
+          hasResults={mcqs.length > 0 || flashcards.length > 0}
+          exportingFormat={exportingFormat}
+          onExport={handleExport}
+          mode={lockedMode ? initialTab : "all"}
+        />
 
         {!lockedMode && (
           <div className="study-tabs">
@@ -391,7 +509,11 @@ function StudySetPage({ mode }) {
           )
         ) : (
           filteredFlashcards.length > 0 ? (
-            <FlashcardSection flashcards={filteredFlashcards} />
+            <FlashcardSection
+              flashcards={filteredFlashcards}
+              knownMap={flashcardKnown}
+              onMark={(index, known) => setFlashcardKnown((prev) => ({ ...prev, [index]: known }))}
+            />
           ) : (
             <section className="result-section">
               <h3>Flashcards</h3>
@@ -413,18 +535,7 @@ function StudySetPage({ mode }) {
         />
       )}
 
-        <KnowledgeGapSection
-          result={knowledgeGapResult}
-          loading={knowledgeGapLoading}
-          onAnalyze={handleAnalyzeKnowledgeGaps}
-        />
-
-        <ExportSection
-          hasResults={mcqs.length > 0 || flashcards.length > 0}
-          exportingFormat={exportingFormat}
-          onExport={handleExport}
-          mode={lockedMode ? initialTab : "all"}
-        />
+        <KnowledgeGapSection result={knowledgeGapResult} loading={knowledgeGapLoading} onAnalyze={handleAnalyzeKnowledgeGaps} />
 
         <div className="other-source-wrap dual-actions" style={{ marginTop: "0.9rem" }}>
           <button type="button" className="ghost-btn" onClick={() => navigate("/uplod")}>

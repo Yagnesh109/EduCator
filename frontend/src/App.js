@@ -12,6 +12,8 @@ import McqPage from "./components/upload/McqPage";
 import FlashcardPage from "./components/upload/FlashcardPage";
 import HistoryPage from "./components/upload/HistoryPage";
 import SummaryPage from "./components/upload/SummaryPage";
+import FillBlanksPage from "./components/upload/FillBlanksPage";
+import TrueFalsePage from "./components/upload/TrueFalsePage";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -179,6 +181,22 @@ function App() {
           element={
             <ProtectedRoute user={user}>
               <SummaryPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/fill-blanks"
+          element={
+            <ProtectedRoute user={user}>
+              <FillBlanksPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/true-false"
+          element={
+            <ProtectedRoute user={user}>
+              <TrueFalsePage />
             </ProtectedRoute>
           }
         />

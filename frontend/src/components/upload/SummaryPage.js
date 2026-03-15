@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { API_BASE } from "../../config/api";
+import ExportSection from "./ExportSection";
 import SummarySection from "./SummarySection";
 
 function SummaryPage() {
@@ -31,6 +32,7 @@ function SummaryPage() {
   const [audioUrl, setAudioUrl] = useState("");
   const [audioLoading, setAudioLoading] = useState(false);
   const [ttsLanguage, setTtsLanguage] = useState("en");
+  const [exportingFormat, setExportingFormat] = useState("");
 
   const handleGoBack = () => {
     if (window.history.length > 1) {
@@ -81,6 +83,49 @@ function SummaryPage() {
     }
   };
 
+  const handleExport = async (format) => {
+    try {
+      setExportingFormat(format);
+      const response = await fetch(`${API_BASE}/api/export/study-set/${format}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "summary",
+          summary,
+          mcqs: [],
+          flashcards: [],
+          fillBlanks: [],
+          trueFalse: [],
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data?.error || "Export failed");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const fallback = `summary.${format === "quiz" ? "txt" : format}`;
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/i);
+      const filename = match?.[1] || fallback;
+
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Downloaded ${filename}`);
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || "Export failed");
+    } finally {
+      setExportingFormat("");
+    }
+  };
+
   if (!summary) {
     return (
       <main className="upload-page">
@@ -106,11 +151,12 @@ function SummaryPage() {
           <h1>Study Summary</h1>
           <p>Your generated summary in one place.</p>
         </header>
-        <div style={{ textAlign: "center", marginBottom: "0.8rem" }}>
-          <button type="button" onClick={handleGoBack}>
-            Back
-          </button>
-        </div>
+        <ExportSection
+          hasResults={Boolean(summary)}
+          exportingFormat={exportingFormat}
+          onExport={handleExport}
+          mode="summary"
+        />
         <SummarySection
           summary={summary}
           onSpeak={handleSpeakSummary}
@@ -121,6 +167,11 @@ function SummaryPage() {
           onTtsLanguageChange={setTtsLanguage}
           ttsLanguages={ttsLanguages}
         />
+        <div style={{ textAlign: "center", marginTop: "1rem" }}>
+          <button type="button" onClick={handleGoBack}>
+            Back
+          </button>
+        </div>
       </section>
     </main>
   );

@@ -72,11 +72,11 @@ function McqSection({
       </ol>
       {allAnswered ? (
         <p className="score-board">
-          Final Score: {correctCount}/{totalMcqCount}
+          Final Score: {correctCount} correct, {totalMcqCount - correctCount} wrong (out of {totalMcqCount})
         </p>
       ) : (
         <p className="score-board">
-          Progress: {correctCount} correct out of {answeredCount} answered
+          Progress: {correctCount} correct, {answeredCount - correctCount} wrong ({answeredCount}/{totalMcqCount} answered)
         </p>
       )}
     </section>

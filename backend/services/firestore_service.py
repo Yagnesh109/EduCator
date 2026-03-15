@@ -66,10 +66,14 @@ def serialize_history_doc(doc_id, doc):
         "generatedItems": doc.get("generatedItems", []),
         "hadMcqs": doc.get("hadMcqs", False),
         "hadFlashcards": doc.get("hadFlashcards", False),
+        "hadFillBlanks": doc.get("hadFillBlanks", False),
+        "hadTrueFalse": doc.get("hadTrueFalse", False),
         "mcqTotal": doc.get("mcqTotal", 0),
         "mcqCorrect": doc.get("mcqCorrect", 0),
         "mcqs": doc.get("mcqs", []),
         "flashcards": doc.get("flashcards", []),
+        "fillBlanks": doc.get("fillBlanks", []),
+        "trueFalse": doc.get("trueFalse", []),
         "summary": doc.get("summary", ""),
         "createdAt": doc.get("createdAt", ""),
         "createdAtEpoch": doc.get("createdAtEpoch", 0),
@@ -107,10 +111,14 @@ def save_session_history(payload):
     source_preview = str(payload.get("sourcePreview", "")).strip()
     had_mcqs = bool(payload.get("hadMcqs", False))
     had_flashcards = bool(payload.get("hadFlashcards", False))
+    had_fill_blanks = bool(payload.get("hadFillBlanks", False))
+    had_true_false = bool(payload.get("hadTrueFalse", False))
     mcq_total = int(payload.get("mcqTotal", 0))
     mcq_correct = int(payload.get("mcqCorrect", 0))
     mcqs = payload.get("mcqs", [])
     flashcards = payload.get("flashcards", [])
+    fill_blanks = payload.get("fillBlanks", [])
+    true_false = payload.get("trueFalse", [])
     summary = str(payload.get("summary", "")).strip()
 
     session_doc = {
@@ -118,10 +126,14 @@ def save_session_history(payload):
         "sourcePreview": source_preview[:500],
         "hadMcqs": had_mcqs,
         "hadFlashcards": had_flashcards,
+        "hadFillBlanks": had_fill_blanks,
+        "hadTrueFalse": had_true_false,
         "mcqTotal": max(0, mcq_total),
         "mcqCorrect": max(0, mcq_correct),
         "mcqs": mcqs if isinstance(mcqs, list) else [],
         "flashcards": flashcards if isinstance(flashcards, list) else [],
+        "fillBlanks": fill_blanks if isinstance(fill_blanks, list) else [],
+        "trueFalse": true_false if isinstance(true_false, list) else [],
         "summary": summary[:4000],
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "createdAtEpoch": int(time.time()),

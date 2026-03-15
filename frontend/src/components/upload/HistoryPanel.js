@@ -90,6 +90,41 @@ function HistoryPanel({
                       </div>
                     </>
                   )}
+                  {Array.isArray(item.fillBlanks) && item.fillBlanks.length > 0 && (
+                    <>
+                      <h4>Fill in the Blanks</h4>
+                      <ol className="history-mcq-list">
+                        {item.fillBlanks.map((blank, idx) => (
+                          <li key={`h-blank-${item.id}-${idx}`}>
+                            <p className="result-question">{blank.prompt}</p>
+                            <p className="history-answer">
+                              Answer: <strong>{blank.answer}</strong>
+                            </p>
+                          </li>
+                        ))}
+                      </ol>
+                    </>
+                  )}
+                  {Array.isArray(item.trueFalse) && item.trueFalse.length > 0 && (
+                    <>
+                      <h4>True / False</h4>
+                      <ol className="history-mcq-list">
+                        {item.trueFalse.map((tf, idx) => (
+                          <li key={`h-tf-${item.id}-${idx}`}>
+                            <p className="result-question">{tf.statement}</p>
+                            <p className="history-answer">
+                              Answer: <strong>{tf.answer ? "True" : "False"}</strong>
+                            </p>
+                            {tf.explanation && (
+                              <p className="history-answer" style={{ marginTop: "0.35rem" }}>
+                                Why: <strong>{tf.explanation}</strong>
+                              </p>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    </>
+                  )}
                 </div>
               )}
             </li>

@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# uploads / runtime
+temp_uploads/
+
+# env / secrets
+.env
+.env.*
+serviceAccountKey.json
+*firebase-adminsdk*.json
+

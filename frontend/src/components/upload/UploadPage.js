@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { API_BASE } from "../../config/api";
 import InputSection from "./InputSection";
 import VoiceQASection from "./VoiceQASection";
+import generateWithTool from "./generateTool";
 
 function UploadPage({ user }) {
   const displayName =
@@ -31,6 +32,8 @@ function UploadPage({ user }) {
   const [mcqVerdicts, setMcqVerdicts] = useState({});
   const [verifyingAnswers, setVerifyingAnswers] = useState({});
   const [flashcards, setFlashcards] = useState([]);
+  const [fillBlanks, setFillBlanks] = useState([]);
+  const [trueFalse, setTrueFalse] = useState([]);
   const [loadingStudySet, setLoadingStudySet] = useState(false);
   const [summary, setSummary] = useState("");
   const [audioUrl, setAudioUrl] = useState("");
@@ -53,21 +56,46 @@ function UploadPage({ user }) {
   const [sources, setSources] = useState([]);
   const [mcqGenerating, setMcqGenerating] = useState(false);
   const [flashGenerating, setFlashGenerating] = useState(false);
+  const [fillBlanksGenerating, setFillBlanksGenerating] = useState(false);
+  const [trueFalseGenerating, setTrueFalseGenerating] = useState(false);
   const [savingSession, setSavingSession] = useState(false);
   const [mcqReady, setMcqReady] = useState(false);
   const [flashReady, setFlashReady] = useState(false);
+  const [fillBlanksReady, setFillBlanksReady] = useState(false);
+  const [trueFalseReady, setTrueFalseReady] = useState(false);
   const [mcqPayload, setMcqPayload] = useState(null);
   const [flashPayload, setFlashPayload] = useState(null);
+  const [fillBlanksPayload, setFillBlanksPayload] = useState(null);
+  const [trueFalsePayload, setTrueFalsePayload] = useState(null);
 
   const persistSourceSession = (sourceType, sourcePreview, sourceText = "", sourceFileId = "", sourceFileName = "") => {
+    let existing = {};
+    try {
+      const savedRaw = sessionStorage.getItem("educator_study_set");
+      existing = savedRaw ? JSON.parse(savedRaw) || {} : {};
+    } catch (_error) {
+      existing = {};
+    }
     const payload = {
       sourceType,
       sourcePreview,
       sourceText,
       sourceFileId,
       sourceFileName,
+      sources: Array.isArray(existing?.sources) ? existing.sources : [],
+      difficultyByMode:
+        existing?.difficultyByMode && typeof existing.difficultyByMode === "object"
+          ? existing.difficultyByMode
+          : {
+              mcq: "medium",
+              flashcards: "medium",
+              true_false: "medium",
+              fill_blanks: "medium",
+            },
       mcqs: [],
       flashcards: [],
+      fillBlanks: [],
+      trueFalse: [],
       summary: "",
       mcqSetId: "",
     };
@@ -77,14 +105,20 @@ function UploadPage({ user }) {
   const resetGeneratedOutputs = () => {
     setMcqs([]);
     setFlashcards([]);
+    setFillBlanks([]);
+    setTrueFalse([]);
     setSummary("");
     setMcqSetId("");
     setMcqVerdicts({});
     setVerifyingAnswers({});
     setMcqReady(false);
     setFlashReady(false);
+    setFillBlanksReady(false);
+    setTrueFalseReady(false);
     setMcqPayload(null);
     setFlashPayload(null);
+    setFillBlanksPayload(null);
+    setTrueFalsePayload(null);
     setAudioUrl("");
   };
 
@@ -121,7 +155,7 @@ function UploadPage({ user }) {
   const hasText = textValue.trim().length > 0;
   const hasFile = Boolean(uploadFile) || Boolean(storedFileId);
   const canGenerate = hasText || hasFile;
-  const hasResults = mcqs.length > 0 || flashcards.length > 0;
+  const hasResults = mcqs.length > 0 || flashcards.length > 0 || fillBlanks.length > 0 || trueFalse.length > 0;
   const hasSummary = summary.trim().length > 0;
   const hasSource =
     sources.length > 0 ||
@@ -200,7 +234,19 @@ function UploadPage({ user }) {
 
     try {
       setLoadingStudySet(true);
-      const response = await fetch(`${API_BASE}/api/generate/study-set`, {
+      const savedRaw = sessionStorage.getItem("educator_study_set");
+      let difficulty = "medium";
+      if (savedRaw) {
+        try {
+          const saved = JSON.parse(savedRaw);
+          difficulty = String(saved?.difficultyByMode?.mcq || "medium");
+        } catch (_error) {}
+      }
+      formData.append("tool", "study_set");
+      formData.append("difficulty", difficulty);
+      formData.append("count", "20");
+
+      const response = await fetch(`${API_BASE}/api/tools/generate`, {
         method: "POST",
         body: formData,
       });
@@ -211,8 +257,8 @@ function UploadPage({ user }) {
 
       const generatedMcqs = Array.isArray(data?.mcqs) ? data.mcqs : [];
       const generatedFlashcards = Array.isArray(data?.flashcards) ? data.flashcards : [];
-      if (generatedMcqs.length < 10 || generatedFlashcards.length < 10) {
-        throw new Error("Server did not return at least 10 MCQs and 10 flashcards");
+      if (generatedMcqs.length < 20 || generatedFlashcards.length < 20) {
+        throw new Error("Server did not return at least 20 MCQs and 20 flashcards");
       }
 
       setMcqs(generatedMcqs);
@@ -222,7 +268,15 @@ function UploadPage({ user }) {
       setMcqSetId(data?.mcqSetId || "");
       setMcqVerdicts({});
       setVerifyingAnswers({});
-      toast.success("Study set generated: 10 MCQs + 10 Flashcards");
+      toast.success("Study set generated: 20 MCQs + 20 Flashcards");
+      let sourcesSnapshot = [];
+      try {
+        const savedRaw = sessionStorage.getItem("educator_study_set");
+        const saved = savedRaw ? JSON.parse(savedRaw) : null;
+        if (Array.isArray(saved?.sources)) {
+          sourcesSnapshot = saved.sources;
+        }
+      } catch (_error) {}
       const studySetPayload = {
         mcqs: generatedMcqs,
         flashcards: generatedFlashcards,
@@ -233,6 +287,13 @@ function UploadPage({ user }) {
         sourceText: inputMode === "text" ? textValue : "",
         sourceFileId: storedFileId,
         sourceFileName: storedFileName,
+        sources: sourcesSnapshot,
+        difficultyByMode: {
+          mcq: String(difficulty || "medium"),
+          flashcards: String(difficulty || "medium"),
+          fill_blanks: "medium",
+          true_false: "medium",
+        },
       };
       sessionStorage.setItem("educator_study_set", JSON.stringify(studySetPayload));
       navigate(navigateTo, { state: studySetPayload });
@@ -375,10 +436,14 @@ function UploadPage({ user }) {
       sourcePreview,
       hadMcqs: mcqs.length > 0,
       hadFlashcards: flashcards.length > 0,
+      hadFillBlanks: fillBlanks.length > 0,
+      hadTrueFalse: trueFalse.length > 0,
       mcqTotal: totalMcqCount,
       mcqCorrect: correctCount,
       mcqs,
       flashcards,
+      fillBlanks,
+      trueFalse,
       summary,
     };
     const response = await fetch(`${API_BASE}/api/history/session`, {
@@ -464,6 +529,19 @@ function UploadPage({ user }) {
   };
 
   const handleGenerateOtherSource = async () => {
+    // Important: clear stored session, otherwise the restore effect will bring old results back.
+    sessionStorage.removeItem("educator_study_set");
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl);
+    }
+    if (voiceAnswerAudioUrl) {
+      URL.revokeObjectURL(voiceAnswerAudioUrl);
+    }
+    if (recognizer && listening) {
+      try {
+        recognizer.stop();
+      } catch (_error) {}
+    }
     setAudioUrl("");
     setTextValue("");
     setUploadFile(null);
@@ -473,27 +551,45 @@ function UploadPage({ user }) {
     setSources([]);
     setRagQuestion("");
     setRagAnswer("");
+    setRagLoading(false);
+    setAiGuideMode("text");
     setVoiceQuestion("");
     setVoiceAnswer("");
     setVoiceAnswerAudioUrl("");
+    setVoiceLoading(false);
     setListening(false);
+    setLastSource(null);
     setMcqGenerating(false);
     setFlashGenerating(false);
+    setFillBlanksGenerating(false);
+    setTrueFalseGenerating(false);
     setMcqReady(false);
     setFlashReady(false);
+    setFillBlanksReady(false);
+    setTrueFalseReady(false);
     setMcqPayload(null);
     setFlashPayload(null);
+    setFillBlanksPayload(null);
+    setTrueFalsePayload(null);
     setMcqs([]);
     setMcqSetId("");
     setMcqVerdicts({});
     setVerifyingAnswers({});
     setFlashcards([]);
+    setFillBlanks([]);
+    setTrueFalse([]);
     setSummary("");
+    setSummaryGenerating(false);
+    setAudioLoading(false);
+    setLoadingStudySet(false);
   };
 
   const getActiveSource = () => {
     if (sources.length > 0) {
-      return sources[0];
+      if (sources.length === 1) {
+        return sources[0];
+      }
+      return { mode: "multi", sources };
     }
     if (inputMode === "file" && storedFileId) {
       return { mode: "file", fileId: storedFileId, label: storedFileName };
@@ -627,6 +723,45 @@ function UploadPage({ user }) {
   const openSourceModal = () => setSourceModalOpen(true);
   const closeSourceModal = () => setSourceModalOpen(false);
 
+  const persistSourcesSnapshot = (list) => {
+    const safeSources = Array.isArray(list)
+      ? list
+          .map((item) => {
+            if (item?.mode === "text") {
+              return {
+                id: item.id,
+                type: "text",
+                mode: "text",
+                label: item.label,
+                text: item.text,
+              };
+            }
+            if (item?.mode === "file" && item?.fileId) {
+              return {
+                id: item.id,
+                type: "file",
+                mode: "file",
+                label: item.label,
+                fileId: item.fileId,
+              };
+            }
+            return null;
+          })
+          .filter(Boolean)
+      : [];
+
+    const savedRaw = sessionStorage.getItem("educator_study_set");
+    let saved = {};
+    if (savedRaw) {
+      try {
+        saved = JSON.parse(savedRaw) || {};
+      } catch (_error) {
+        saved = {};
+      }
+    }
+    sessionStorage.setItem("educator_study_set", JSON.stringify({ ...saved, sources: safeSources }));
+  };
+
   const addSourceFromModal = () => {
     if (!canGenerate) {
       toast.info("Add text or upload a file first");
@@ -649,12 +784,17 @@ function UploadPage({ user }) {
             label: textValue.trim().slice(0, 80) || "Text source",
             text: textValue.trim(),
           };
-    setSources((prev) => [nextSource, ...prev]);
+    setSources((prev) => {
+      const nextList = [nextSource, ...prev];
+      persistSourcesSnapshot(nextList);
+      return nextList;
+    });
     setLastSource(
       nextSource.mode === "file"
         ? { mode: "file", file: nextSource.file, fileId: nextSource.fileId }
         : { mode: "text", text: nextSource.text }
     );
+  
     setMcqReady(false);
     setFlashReady(false);
     setMcqPayload(null);
@@ -674,9 +814,32 @@ function UploadPage({ user }) {
     const sourceType = inputMode || (uploadFile || storedFileId ? "file" : "text");
     const sourcePreview =
       inputMode === "text" ? textValue.slice(0, 300) : storedFileName || uploadFile?.name || "";
+    let difficultyByMode = {
+      mcq: "medium",
+      flashcards: "medium",
+      true_false: "medium",
+      fill_blanks: "medium",
+    };
+    try {
+      const savedRaw = sessionStorage.getItem("educator_study_set");
+      const saved = savedRaw ? JSON.parse(savedRaw) : null;
+      if (saved?.difficultyByMode && typeof saved.difficultyByMode === "object") {
+        difficultyByMode = { ...difficultyByMode, ...saved.difficultyByMode };
+      }
+    } catch (_error) {}
+    let sourcesSnapshot = [];
+    try {
+      const savedRaw = sessionStorage.getItem("educator_study_set");
+      const saved = savedRaw ? JSON.parse(savedRaw) : null;
+      if (Array.isArray(saved?.sources)) {
+        sourcesSnapshot = saved.sources;
+      }
+    } catch (_error) {}
     return {
       mcqs: Array.isArray(data?.mcqs) ? data.mcqs : [],
       flashcards: Array.isArray(data?.flashcards) ? data.flashcards : [],
+      fillBlanks: Array.isArray(data?.fillBlanks) ? data.fillBlanks : [],
+      trueFalse: Array.isArray(data?.trueFalse) ? data.trueFalse : [],
       summary: String(data?.summary || "").trim(),
       mcqSetId: data?.mcqSetId || "",
       sourceType,
@@ -684,46 +847,123 @@ function UploadPage({ user }) {
       sourceText: inputMode === "text" ? textValue : "",
       sourceFileId: storedFileId,
       sourceFileName: storedFileName,
+      sources: sourcesSnapshot,
+      difficultyByMode,
     };
   };
 
   useEffect(() => {
     const savedRaw = sessionStorage.getItem("educator_study_set");
     if (!savedRaw) return;
-    if (mcqs.length || flashcards.length || summary || textValue || uploadFile || storedFileId) return;
+    if (
+      mcqs.length ||
+      flashcards.length ||
+      fillBlanks.length ||
+      trueFalse.length ||
+      summary ||
+      textValue ||
+      uploadFile ||
+      storedFileId
+    )
+      return;
     try {
       const saved = JSON.parse(savedRaw);
+      const hasSavedSources = Array.isArray(saved?.sources) && saved.sources.length > 0;
+      if (!sources.length && hasSavedSources) {
+        setSources(saved.sources);
+        const primary = saved.sources[0];
+        if (primary?.mode === "text" && primary?.text) {
+          setTextValue(String(primary.text));
+          setInputMode("text");
+          setLastSource({ mode: "text", text: String(primary.text) });
+        } else if (primary?.mode === "file" && primary?.fileId) {
+          setInputMode("file");
+          setStoredFileId(String(primary.fileId));
+          setStoredFileName(String(primary.label || "Uploaded file"));
+          setLastSource({ mode: "file", fileId: String(primary.fileId), label: String(primary.label || "Uploaded file") });
+        }
+      }
       const restoredMcqs = Array.isArray(saved?.mcqs) ? saved.mcqs : [];
       const restoredFlashcards = Array.isArray(saved?.flashcards) ? saved.flashcards : [];
+      const restoredFillBlanks = Array.isArray(saved?.fillBlanks) ? saved.fillBlanks : [];
+      const restoredTrueFalse = Array.isArray(saved?.trueFalse) ? saved.trueFalse : [];
       const restoredSummary = String(saved?.summary || "").trim();
       const restoredMcqSetId = String(saved?.mcqSetId || "").trim();
       if (restoredMcqs.length) setMcqs(restoredMcqs);
       if (restoredFlashcards.length) setFlashcards(restoredFlashcards);
+      if (restoredFillBlanks.length) setFillBlanks(restoredFillBlanks);
+      if (restoredTrueFalse.length) setTrueFalse(restoredTrueFalse);
       if (restoredSummary) setSummary(restoredSummary);
       if (restoredMcqSetId) setMcqSetId(restoredMcqSetId);
       if (restoredMcqs.length) {
         setMcqReady(true);
         setMcqPayload({
           mcqs: restoredMcqs,
-          flashcards: [],
+          flashcards: restoredFlashcards,
+          fillBlanks: restoredFillBlanks,
+          trueFalse: restoredTrueFalse,
           summary: restoredSummary,
           mcqSetId: restoredMcqSetId,
           sourceType: saved?.sourceType || "",
           sourcePreview: saved?.sourcePreview || "",
+          sourceText: saved?.sourceText || "",
+          sourceFileId: saved?.sourceFileId || "",
+          sourceFileName: saved?.sourceFileName || "",
+          difficultyByMode: saved?.difficultyByMode || undefined,
         });
       }
       if (restoredFlashcards.length) {
         setFlashReady(true);
         setFlashPayload({
-          mcqs: [],
+          mcqs: restoredMcqs,
           flashcards: restoredFlashcards,
+          fillBlanks: restoredFillBlanks,
+          trueFalse: restoredTrueFalse,
           summary: restoredSummary,
           mcqSetId: restoredMcqSetId,
           sourceType: saved?.sourceType || "",
           sourcePreview: saved?.sourcePreview || "",
+          sourceText: saved?.sourceText || "",
+          sourceFileId: saved?.sourceFileId || "",
+          sourceFileName: saved?.sourceFileName || "",
+          difficultyByMode: saved?.difficultyByMode || undefined,
         });
       }
-      if (saved?.sourceType === "text" && saved?.sourceText) {
+      if (restoredFillBlanks.length) {
+        setFillBlanksReady(true);
+        setFillBlanksPayload({
+          mcqs: restoredMcqs,
+          flashcards: restoredFlashcards,
+          fillBlanks: restoredFillBlanks,
+          trueFalse: restoredTrueFalse,
+          summary: restoredSummary,
+          mcqSetId: restoredMcqSetId,
+          sourceType: saved?.sourceType || "",
+          sourcePreview: saved?.sourcePreview || "",
+          sourceText: saved?.sourceText || "",
+          sourceFileId: saved?.sourceFileId || "",
+          sourceFileName: saved?.sourceFileName || "",
+          difficultyByMode: saved?.difficultyByMode || undefined,
+        });
+      }
+      if (restoredTrueFalse.length) {
+        setTrueFalseReady(true);
+        setTrueFalsePayload({
+          mcqs: restoredMcqs,
+          flashcards: restoredFlashcards,
+          fillBlanks: restoredFillBlanks,
+          trueFalse: restoredTrueFalse,
+          summary: restoredSummary,
+          mcqSetId: restoredMcqSetId,
+          sourceType: saved?.sourceType || "",
+          sourcePreview: saved?.sourcePreview || "",
+          sourceText: saved?.sourceText || "",
+          sourceFileId: saved?.sourceFileId || "",
+          sourceFileName: saved?.sourceFileName || "",
+          difficultyByMode: saved?.difficultyByMode || undefined,
+        });
+      }
+      if (!hasSavedSources && saved?.sourceType === "text" && saved?.sourceText) {
         setTextValue(String(saved.sourceText));
         setInputMode("text");
         setLastSource({ mode: "text", text: String(saved.sourceText) });
@@ -738,7 +978,7 @@ function UploadPage({ user }) {
             },
           ]);
         }
-      } else if (saved?.sourceType === "file" && saved?.sourceFileId) {
+      } else if (!hasSavedSources && saved?.sourceType === "file" && saved?.sourceFileId) {
         setInputMode("file");
         setStoredFileId(String(saved.sourceFileId));
         setStoredFileName(String(saved.sourceFileName || saved.sourcePreview || "Uploaded file"));
@@ -763,7 +1003,17 @@ function UploadPage({ user }) {
     } catch (_error) {
       // ignore corrupt session
     }
-  }, [mcqs.length, flashcards.length, summary, textValue, uploadFile, storedFileId, sources.length]);
+  }, [
+    mcqs.length,
+    flashcards.length,
+    fillBlanks.length,
+    trueFalse.length,
+    summary,
+    textValue,
+    uploadFile,
+    storedFileId,
+    sources.length,
+  ]);
 
   const handleGenerateMcqs = async () => {
     if (!canGenerate) {
@@ -772,32 +1022,16 @@ function UploadPage({ user }) {
     }
     try {
       setMcqGenerating(true);
-      const formData = new FormData();
       const activeSource = getActiveSource();
-      if (activeSource?.mode === "file" && activeSource.fileId) {
-        formData.append("fileId", activeSource.fileId);
-      } else if (activeSource?.mode === "file" && activeSource.file instanceof File) {
-        formData.append("file", activeSource.file);
-      } else if (activeSource?.mode === "text" && activeSource.text) {
-        formData.append("text", activeSource.text);
-      } else if (inputMode === "file" && storedFileId) {
-        formData.append("fileId", storedFileId);
-      } else if (inputMode === "file" && uploadFile instanceof File) {
-        formData.append("file", uploadFile);
-      } else {
-        formData.append("text", textValue);
+      const savedRaw = sessionStorage.getItem("educator_study_set");
+      let difficulty = "medium";
+      if (savedRaw) {
+        try {
+          const saved = JSON.parse(savedRaw);
+          difficulty = String(saved?.difficultyByMode?.mcq || "medium");
+        } catch (_error) {}
       }
-      const response = await fetch(`${API_BASE}/api/generate/mcqs`, { method: "POST", body: formData });
-      const rawText = await response.text();
-      let data = {};
-      try {
-        data = rawText ? JSON.parse(rawText) : {};
-      } catch (_error) {
-        data = {};
-      }
-      if (!response.ok) {
-        throw new Error(data?.error || rawText || "Failed to generate MCQs");
-      }
+      const data = await generateWithTool({ tool: "mcq", source: activeSource, difficulty, count: 20 });
       const normalizeArray = (value) => {
         if (Array.isArray(value)) return value;
         if (typeof value === "string") {
@@ -817,6 +1051,8 @@ function UploadPage({ user }) {
       const payload = buildStudySetPayload({
         mcqs: mcqItems,
         flashcards,
+        fillBlanks,
+        trueFalse,
         summary,
         mcqSetId: data?.mcqSetId || mcqSetId || "",
       });
@@ -839,32 +1075,16 @@ function UploadPage({ user }) {
     }
     try {
       setFlashGenerating(true);
-      const formData = new FormData();
       const activeSource = getActiveSource();
-      if (activeSource?.mode === "file" && activeSource.fileId) {
-        formData.append("fileId", activeSource.fileId);
-      } else if (activeSource?.mode === "file" && activeSource.file instanceof File) {
-        formData.append("file", activeSource.file);
-      } else if (activeSource?.mode === "text" && activeSource.text) {
-        formData.append("text", activeSource.text);
-      } else if (inputMode === "file" && storedFileId) {
-        formData.append("fileId", storedFileId);
-      } else if (inputMode === "file" && uploadFile instanceof File) {
-        formData.append("file", uploadFile);
-      } else {
-        formData.append("text", textValue);
+      const savedRaw = sessionStorage.getItem("educator_study_set");
+      let difficulty = "medium";
+      if (savedRaw) {
+        try {
+          const saved = JSON.parse(savedRaw);
+          difficulty = String(saved?.difficultyByMode?.flashcards || "medium");
+        } catch (_error) {}
       }
-      const response = await fetch(`${API_BASE}/api/generate/flashcards`, { method: "POST", body: formData });
-      const rawText = await response.text();
-      let data = {};
-      try {
-        data = rawText ? JSON.parse(rawText) : {};
-      } catch (_error) {
-        data = {};
-      }
-      if (!response.ok) {
-        throw new Error(data?.error || rawText || "Failed to generate flashcards");
-      }
+      const data = await generateWithTool({ tool: "flashcards", source: activeSource, difficulty, count: 20 });
       const normalizeArray = (value) => {
         if (Array.isArray(value)) return value;
         if (typeof value === "string") {
@@ -884,6 +1104,8 @@ function UploadPage({ user }) {
       const payload = buildStudySetPayload({
         mcqs,
         flashcards: flashItems,
+        fillBlanks,
+        trueFalse,
         summary,
         mcqSetId,
       });
@@ -899,6 +1121,98 @@ function UploadPage({ user }) {
     }
   };
 
+  const handleGenerateFillBlanks = async () => {
+    if (fillBlanksReady) {
+      handleViewFillBlanks();
+      return;
+    }
+    if (!canGenerate) {
+      toast.info("Enter text or upload a file first");
+      return;
+    }
+    try {
+      setFillBlanksGenerating(true);
+      const activeSource = getActiveSource();
+      const savedRaw = sessionStorage.getItem("educator_study_set");
+      let difficulty = "medium";
+      if (savedRaw) {
+        try {
+          const saved = JSON.parse(savedRaw);
+          difficulty = String(saved?.difficultyByMode?.fill_blanks || "medium");
+        } catch (_error) {}
+      }
+      const data = await generateWithTool({ tool: "fill_blanks", source: activeSource, difficulty, count: 20 });
+      const items = Array.isArray(data?.fillBlanks) ? data.fillBlanks : [];
+      if (items.length === 0) {
+        throw new Error("Server returned no fill-in-the-blanks");
+      }
+      setFillBlanks(items);
+      const payload = buildStudySetPayload({
+        mcqs,
+        flashcards,
+        fillBlanks: items,
+        trueFalse,
+        summary,
+        mcqSetId,
+      });
+      sessionStorage.setItem("educator_study_set", JSON.stringify(payload));
+      setFillBlanksPayload(payload);
+      setFillBlanksReady(true);
+      toast.success("Fill-in-the-blanks generated. Click to open.");
+    } catch (error) {
+      console.error(error);
+      toast.error(getReadableErrorMessage(error, "Failed to generate fill-in-the-blanks"));
+    } finally {
+      setFillBlanksGenerating(false);
+    }
+  };
+
+  const handleGenerateTrueFalse = async () => {
+    if (trueFalseReady) {
+      handleViewTrueFalse();
+      return;
+    }
+    if (!canGenerate) {
+      toast.info("Enter text or upload a file first");
+      return;
+    }
+    try {
+      setTrueFalseGenerating(true);
+      const activeSource = getActiveSource();
+      const savedRaw = sessionStorage.getItem("educator_study_set");
+      let difficulty = "medium";
+      if (savedRaw) {
+        try {
+          const saved = JSON.parse(savedRaw);
+          difficulty = String(saved?.difficultyByMode?.true_false || "medium");
+        } catch (_error) {}
+      }
+      const data = await generateWithTool({ tool: "true_false", source: activeSource, difficulty, count: 20 });
+      const items = Array.isArray(data?.trueFalse) ? data.trueFalse : [];
+      if (items.length === 0) {
+        throw new Error("Server returned no true/false questions");
+      }
+      setTrueFalse(items);
+      const payload = buildStudySetPayload({
+        mcqs,
+        flashcards,
+        fillBlanks,
+        trueFalse: items,
+        summary,
+        mcqSetId,
+      });
+      sessionStorage.setItem("educator_study_set", JSON.stringify(payload));
+      setTrueFalsePayload(payload);
+      setTrueFalseReady(true);
+      toast.success("True/False generated. Click to open.");
+    } catch (error) {
+      console.error(error);
+      toast.error(getReadableErrorMessage(error, "Failed to generate true/false"));
+    } finally {
+      setTrueFalseGenerating(false);
+    }
+  };
+
   const handleViewMcqs = () => {
     if (!mcqPayload) return;
     navigate("/mcqs", { state: mcqPayload });
@@ -909,11 +1223,23 @@ function UploadPage({ user }) {
     navigate("/flashcards", { state: flashPayload });
   };
 
+  const handleViewFillBlanks = () => {
+    if (!fillBlanksPayload) return;
+    navigate("/fill-blanks", { state: fillBlanksPayload });
+  };
+
+  const handleViewTrueFalse = () => {
+    if (!trueFalsePayload) return;
+    navigate("/true-false", { state: trueFalsePayload });
+  };
+
   const handleViewSummary = () => {
     if (!hasSummary) return;
     const payload = buildStudySetPayload({
       mcqs,
       flashcards,
+      fillBlanks,
+      trueFalse,
       summary,
       mcqSetId,
     });
@@ -932,31 +1258,15 @@ function UploadPage({ user }) {
     }
     try {
       setSummaryGenerating(true);
-      const formData = new FormData();
       const activeSource = getActiveSource();
-      if (activeSource?.mode === "file" && activeSource.fileId) {
-        formData.append("fileId", activeSource.fileId);
-      } else if (activeSource?.mode === "file" && activeSource.file instanceof File) {
-        formData.append("file", activeSource.file);
-      } else if (activeSource?.mode === "text" && activeSource.text) {
-        formData.append("text", activeSource.text);
-      } else if (inputMode === "file" && storedFileId) {
-        formData.append("fileId", storedFileId);
-      } else if (inputMode === "file" && uploadFile instanceof File) {
-        formData.append("file", uploadFile);
-      } else {
-        formData.append("text", textValue);
-      }
-      const response = await fetch(`${API_BASE}/api/generate/summary`, { method: "POST", body: formData });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data?.error || "Failed to generate summary");
-      }
+      const data = await generateWithTool({ tool: "summary", source: activeSource, difficulty: "medium", count: 20 });
       const nextSummary = String(data?.summary || "").trim();
       setSummary(nextSummary);
       const payload = buildStudySetPayload({
         mcqs,
         flashcards,
+        fillBlanks,
+        trueFalse,
         summary: nextSummary,
         mcqSetId,
       });
@@ -988,6 +1298,9 @@ function UploadPage({ user }) {
         setListening(false);
         setLastSource(null);
         sessionStorage.removeItem("educator_study_set");
+      }
+      if (next.length > 0) {
+        persistSourcesSnapshot(next);
       }
       return next;
     });
@@ -1141,6 +1454,42 @@ function UploadPage({ user }) {
           <section className="notebook-card notebook-chat">
             <div className="card-header">
               <h2 className="card-title">AI Guide</h2>
+              <div className="ai-guide-mode-toggle" aria-label="AI mode toggle">
+                <label className={`ai-guide-mode-option ${aiGuideMode === "text" ? "active" : ""}`} title="Text chat">
+                  <span className="sr-only">Text chat</span>
+                  <input
+                    type="radio"
+                    name="ai-guide-mode"
+                    value="text"
+                    checked={aiGuideMode === "text"}
+                    onChange={() => setAiGuideMode("text")}
+                    aria-label="Text chat"
+                  />
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path
+                      fill="currentColor"
+                      d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9.8L5.5 21.7A1 1 0 0 1 4 21V18H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm0 2v10h1a1 1 0 0 1 1 1v1.6L9 16h11V6H4z"
+                    />
+                  </svg>
+                </label>
+                <label className={`ai-guide-mode-option ${aiGuideMode === "voice" ? "active" : ""}`} title="Voice">
+                  <span className="sr-only">Voice</span>
+                  <input
+                    type="radio"
+                    name="ai-guide-mode"
+                    value="voice"
+                    checked={aiGuideMode === "voice"}
+                    onChange={() => setAiGuideMode("voice")}
+                    aria-label="Voice"
+                  />
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path
+                      fill="currentColor"
+                      d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a1 1 0 1 0-2 0 3 3 0 1 1-6 0 1 1 0 1 0-2 0 5 5 0 0 0 4 4.9V19H8a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2h-3v-3.1A5 5 0 0 0 17 11z"
+                    />
+                  </svg>
+                </label>
+              </div>
             </div>
             <p className="card-subtitle">Ask questions grounded in your uploaded sources.</p>
             <div className="notebook-card-body">
@@ -1185,21 +1534,9 @@ function UploadPage({ user }) {
             <div className="card-header">
               <h2 className="card-title">Tools</h2>
             </div>
-            <p className="card-subtitle">Summaries, MCQs, and flashcards for now.</p>
+            <p className="card-subtitle">Summaries, MCQs, flashcards, fill-in-the-blanks, and true/false.</p>
             <div className="notebook-card-body tools-stack">
               <div className="tool-actions">
-                <button
-                  type="button"
-                  className="tool-action-card"
-                  onClick={() => setAiGuideMode((prev) => (prev === "voice" ? "text" : "voice"))}
-                >
-                  <span className="tool-action-title">
-                    {aiGuideMode === "voice" ? "AI Text Assistant" : "AI Voice Assistant"}
-                  </span>
-                  <span className="tool-action-subtitle">
-                    {aiGuideMode === "voice" ? "Switch to text-based guide" : "Ask by voice and hear replies"}
-                  </span>
-                </button>
                 <button
                   type="button"
                   className={`tool-action-card ${mcqReady ? "tool-action-ready" : ""}`}
@@ -1207,11 +1544,17 @@ function UploadPage({ user }) {
                   disabled={
                     mcqReady
                       ? !mcqPayload
-                      : !canGenerate || loadingStudySet || mcqGenerating || flashGenerating
+                      : !canGenerate ||
+                        loadingStudySet ||
+                        mcqGenerating ||
+                        flashGenerating ||
+                        fillBlanksGenerating ||
+                        trueFalseGenerating ||
+                        summaryGenerating
                   }
                 >
                   <span className="tool-action-title">
-                    {mcqReady ? "MCQs Ready" : mcqGenerating ? "Generating MCQs..." : "Generate MCQs"}
+                    {mcqReady ? "MCQs Ready" : mcqGenerating ? "Generating MCQs..." : "MCQs"}
                   </span>
                   <span className="tool-action-subtitle">
                     {mcqReady ? "Click to open your generated questions" : "Auto-create questions from sources"}
@@ -1223,11 +1566,18 @@ function UploadPage({ user }) {
                   className={`tool-action-card ${flashReady ? "tool-action-ready" : ""}`}
                   onClick={flashReady ? handleViewFlashcards : handleGenerateFlashcards}
                   disabled={
-                    flashReady ? !flashPayload : !canGenerate || loadingStudySet || flashGenerating || mcqGenerating
+                    flashReady
+                      ? !flashPayload
+                      : !canGenerate ||
+                        loadingStudySet ||
+                        flashGenerating ||
+                        mcqGenerating ||
+                        fillBlanksGenerating ||
+                        trueFalseGenerating
                   }
                 >
                   <span className="tool-action-title">
-                    {flashReady ? "Flashcards Ready" : flashGenerating ? "Generating Flashcards..." : "Generate Flashcards"}
+                    {flashReady ? "Flashcards Ready" : flashGenerating ? "Generating Flashcards..." : "Flashcards"}
                   </span>
                   <span className="tool-action-subtitle">
                     {flashReady ? "Click to open your flashcards" : "Create quick recall cards"}
@@ -1236,9 +1586,76 @@ function UploadPage({ user }) {
                 </button>
                 <button
                   type="button"
+                  className={`tool-action-card ${fillBlanksReady ? "tool-action-ready" : ""}`}
+                  onClick={fillBlanksReady ? handleViewFillBlanks : handleGenerateFillBlanks}
+                  disabled={
+                    fillBlanksReady
+                      ? !fillBlanksPayload
+                      : !canGenerate ||
+                        loadingStudySet ||
+                        fillBlanksGenerating ||
+                        mcqGenerating ||
+                        flashGenerating ||
+                        trueFalseGenerating ||
+                        summaryGenerating
+                  }
+                >
+                  <span className="tool-action-title">
+                    {fillBlanksReady
+                      ? "Fill Blanks Ready"
+                      : fillBlanksGenerating
+                      ? "Generating Fill Blanks..."
+                      : "Fill in the Blanks"}
+                  </span>
+                  <span className="tool-action-subtitle">
+                    {fillBlanksReady ? "Click to open your blanks" : "Practice key facts quickly"}
+                  </span>
+                  {!fillBlanksReady && fillBlanksGenerating && (
+                    <span className="tool-action-spinner" aria-hidden="true" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className={`tool-action-card ${trueFalseReady ? "tool-action-ready" : ""}`}
+                  onClick={trueFalseReady ? handleViewTrueFalse : handleGenerateTrueFalse}
+                  disabled={
+                    trueFalseReady
+                      ? !trueFalsePayload
+                      : !canGenerate ||
+                        loadingStudySet ||
+                        trueFalseGenerating ||
+                        mcqGenerating ||
+                        flashGenerating ||
+                        fillBlanksGenerating ||
+                        summaryGenerating
+                  }
+                >
+                  <span className="tool-action-title">
+                    {trueFalseReady
+                      ? "True / False Ready"
+                      : trueFalseGenerating
+                      ? "Generating True / False..."
+                      : "True and False"}
+                  </span>
+                  <span className="tool-action-subtitle">
+                    {trueFalseReady ? "Click to open your true/false questions" : "Fast check: true or false"}
+                  </span>
+                  {!trueFalseReady && trueFalseGenerating && (
+                    <span className="tool-action-spinner" aria-hidden="true" />
+                  )}
+                </button>
+                <button
+                  type="button"
                   className={`tool-action-card ${hasSummary ? "tool-action-ready" : ""}`}
                   onClick={handleGenerateSummary}
-                  disabled={summaryGenerating || (!hasSummary && !canGenerate)}
+                  disabled={
+                    summaryGenerating ||
+                    (!hasSummary && !canGenerate) ||
+                    mcqGenerating ||
+                    flashGenerating ||
+                    fillBlanksGenerating ||
+                    trueFalseGenerating
+                  }
                 >
                   <span className="tool-action-title">
                     {hasSummary ? "Summary Ready" : summaryGenerating ? "Generating Summary..." : "Summary"}
@@ -1318,5 +1735,3 @@ function UploadPage({ user }) {
 }
 
 export default UploadPage;
-
-

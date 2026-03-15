@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { API_BASE } from "../../config/api";
 
 function SummarySection({
   summary,
@@ -13,6 +14,9 @@ function SummarySection({
   const audioRef = useRef(null);
   const autoplayPendingRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [displaySummary, setDisplaySummary] = useState(summary);
+  const translateCacheRef = useRef({});
+  const abortRef = useRef(null);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -38,6 +42,60 @@ function SummarySection({
       autoplayPendingRef.current = false;
     }
   }, [audioUrl]);
+
+  useEffect(() => {
+    const base = String(summary || "");
+    if (!base.trim()) {
+      setDisplaySummary("");
+      return undefined;
+    }
+
+    const lang = String(ttsLanguage || "en").trim().toLowerCase() || "en";
+    if (lang === "en") {
+      setDisplaySummary(base);
+      return undefined;
+    }
+
+    if (translateCacheRef.current[lang]) {
+      setDisplaySummary(translateCacheRef.current[lang]);
+      return undefined;
+    }
+
+    if (abortRef.current) {
+      try {
+        abortRef.current.abort();
+      } catch (_error) {}
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    (async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/translate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: base, targetLanguage: lang }),
+          signal: controller.signal,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.error || "Translation failed");
+        }
+        const translated = String(data?.text || "").trim() || base;
+        translateCacheRef.current[lang] = translated;
+        setDisplaySummary(translated);
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+        setDisplaySummary(base);
+      }
+    })();
+
+    return () => {
+      try {
+        controller.abort();
+      } catch (_error) {}
+    };
+  }, [summary, ttsLanguage]);
 
   if (!summary) {
     return null;
@@ -109,7 +167,7 @@ function SummarySection({
           ))}
         </select>
       </div>
-      <pre className="summary-text">{summary}</pre>
+      <pre className="summary-text">{displaySummary}</pre>
       {audioUrl && (
         <div className="summary-audio">
           <audio ref={audioRef} controls src={audioUrl} />

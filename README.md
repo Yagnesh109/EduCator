@@ -1,4 +1,4 @@
-# Week 1-2: Foundation & Quick Win
+# Week 3-4: Core Educational Agent Architecture
 
 ## Educational Content Generator AI Agent Development Project - Dual Track Version - EduCator
 

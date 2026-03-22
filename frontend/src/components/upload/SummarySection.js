@@ -10,6 +10,8 @@ function SummarySection({
   ttsLanguage,
   onTtsLanguageChange,
   ttsLanguages,
+  topics = [],
+  topicsLoading = false,
 }) {
   const audioRef = useRef(null);
   const autoplayPendingRef = useRef(false);
@@ -17,6 +19,7 @@ function SummarySection({
   const [displaySummary, setDisplaySummary] = useState(summary);
   const translateCacheRef = useRef({});
   const abortRef = useRef(null);
+  const hasSummary = Boolean(summary);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -97,7 +100,7 @@ function SummarySection({
     };
   }, [summary, ttsLanguage]);
 
-  if (!summary) {
+  if (!hasSummary && (!topics || topics.length === 0)) {
     return null;
   }
 
@@ -144,30 +147,51 @@ function SummarySection({
 
   return (
     <section className="result-section">
-      <div className="summary-header">
-        <h3>Summary</h3>
-        <div className="summary-actions">
-          <button type="button" className="summary-speak-btn" onClick={handleSpeakClick} disabled={audioLoading}>
-            {audioLoading ? "Preparing Audio..." : isPlaying ? "Pause" : "Speak"}
-          </button>
-          {audioUrl && (
-            <button type="button" className="summary-download-btn" onClick={handleDownload}>
-              Download Audio
-            </button>
+      {hasSummary && (
+        <>
+          <div className="summary-header">
+            <h3>Summary</h3>
+            <div className="summary-actions">
+              <button type="button" className="summary-speak-btn" onClick={handleSpeakClick} disabled={audioLoading}>
+                {audioLoading ? "Preparing Audio..." : isPlaying ? "Pause" : "Speak"}
+              </button>
+              {audioUrl && (
+                <button type="button" className="summary-download-btn" onClick={handleDownload}>
+                  Download Audio
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="summary-controls">
+            <label htmlFor="tts-language">Language</label>
+            <select id="tts-language" value={ttsLanguage} onChange={(event) => onTtsLanguageChange(event.target.value)}>
+              {(ttsLanguages || []).map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <pre className="summary-text">{displaySummary}</pre>
+        </>
+      )}
+      {(topicsLoading || (topics && topics.length > 0)) && (
+        <div className="summary-topics">
+          <h4>Key Topics</h4>
+          {topicsLoading && <p className="topic-empty-text">Finding topics...</p>}
+          {!topicsLoading && topics && topics.length > 0 && (
+            <ul className="result-options">
+              {topics.map((topic) => (
+                <li key={topic.topic || topic.summary}>
+                  <strong>{topic.topic || "Topic"}</strong>
+                  {topic.importance ? ` (importance ${topic.importance})` : ""} —{" "}
+                  {topic.summary || topic.difficulty || "No summary"}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
-      </div>
-      <div className="summary-controls">
-        <label htmlFor="tts-language">Language</label>
-        <select id="tts-language" value={ttsLanguage} onChange={(event) => onTtsLanguageChange(event.target.value)}>
-          {(ttsLanguages || []).map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <pre className="summary-text">{displaySummary}</pre>
+      )}
       {audioUrl && (
         <div className="summary-audio">
           <audio ref={audioRef} controls src={audioUrl} />

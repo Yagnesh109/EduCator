@@ -12,16 +12,6 @@ function UploadPage({ user }) {
     user?.email?.split("@")[0] ||
     "Learner";
   const navigate = useNavigate();
-  const ttsLanguages = [
-    { value: "en", label: "English" },
-    { value: "hi", label: "Hindi" },
-    { value: "es", label: "Spanish" },
-    { value: "fr", label: "French" },
-    { value: "de", label: "German" },
-    { value: "it", label: "Italian" },
-    { value: "pt", label: "Portuguese" },
-    { value: "ja", label: "Japanese" },
-  ];
   const [textValue, setTextValue] = useState("");
   const [uploadFile, setUploadFile] = useState(null);
   const [storedFileId, setStoredFileId] = useState("");
@@ -36,12 +26,9 @@ function UploadPage({ user }) {
   const [trueFalse, setTrueFalse] = useState([]);
   const [loadingStudySet, setLoadingStudySet] = useState(false);
   const [summary, setSummary] = useState("");
-  const [audioUrl, setAudioUrl] = useState("");
-  const [audioLoading, setAudioLoading] = useState(false);
   const [summaryGenerating, setSummaryGenerating] = useState(false);
-  const [ttsLanguage, setTtsLanguage] = useState("en");
+  const [ttsLanguage] = useState("en");
   const [lastSource, setLastSource] = useState(null);
-  const [exportingFormat, setExportingFormat] = useState("");
   const [ragQuestion, setRagQuestion] = useState("");
   const [ragAnswer, setRagAnswer] = useState("");
   const [ragLoading, setRagLoading] = useState(false);
@@ -67,6 +54,18 @@ function UploadPage({ user }) {
   const [flashPayload, setFlashPayload] = useState(null);
   const [fillBlanksPayload, setFillBlanksPayload] = useState(null);
   const [trueFalsePayload, setTrueFalsePayload] = useState(null);
+  const [audioUrl, setAudioUrl] = useState("");
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState("");
+  const [examSyllabus, setExamSyllabus] = useState("");
+  const [examPast, setExamPast] = useState("");
+  const [examQuestions, setExamQuestions] = useState(20);
+  const [examDuration, setExamDuration] = useState(60);
+  const [examGenerating, setExamGenerating] = useState(false);
+  const [examMock, setExamMock] = useState(null);
+  const [examModalOpen, setExamModalOpen] = useState(false);
+  const [examSyllabusFile, setExamSyllabusFile] = useState(null);
+  const [examPastFile, setExamPastFile] = useState(null);
 
   const persistSourceSession = (sourceType, sourcePreview, sourceText = "", sourceFileId = "", sourceFileName = "") => {
     let existing = {};
@@ -214,213 +213,6 @@ function UploadPage({ user }) {
       setInputMode("");
     }
   };
-
-
-  const generateStudySetFromSource = async (source, navigateTo = "/study-set") => {
-    const formData = new FormData();
-    if (source?.mode === "file" && source?.fileId) {
-      formData.append("fileId", source.fileId);
-    } else if (source?.mode === "file" && source?.file instanceof File) {
-      formData.append("file", source.file);
-    } else if (source?.mode === "text") {
-      formData.append("text", source.text || "");
-    } else if (inputMode === "file" && storedFileId) {
-      formData.append("fileId", storedFileId);
-    } else if (inputMode === "file" && uploadFile instanceof File) {
-      formData.append("file", uploadFile);
-    } else {
-      formData.append("text", textValue);
-    }
-
-    try {
-      setLoadingStudySet(true);
-      const savedRaw = sessionStorage.getItem("educator_study_set");
-      let difficulty = "medium";
-      if (savedRaw) {
-        try {
-          const saved = JSON.parse(savedRaw);
-          difficulty = String(saved?.difficultyByMode?.mcq || "medium");
-        } catch (_error) {}
-      }
-      formData.append("tool", "study_set");
-      formData.append("difficulty", difficulty);
-      formData.append("count", "20");
-
-      const response = await fetch(`${API_BASE}/api/tools/generate`, {
-        method: "POST",
-        body: formData,
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || "Failed to generate study set");
-      }
-
-      const generatedMcqs = Array.isArray(data?.mcqs) ? data.mcqs : [];
-      const generatedFlashcards = Array.isArray(data?.flashcards) ? data.flashcards : [];
-      if (generatedMcqs.length < 20 || generatedFlashcards.length < 20) {
-        throw new Error("Server did not return at least 20 MCQs and 20 flashcards");
-      }
-
-      setMcqs(generatedMcqs);
-      setFlashcards(generatedFlashcards);
-      setSummary(String(data?.summary || "").trim());
-      setAudioUrl("");
-      setMcqSetId(data?.mcqSetId || "");
-      setMcqVerdicts({});
-      setVerifyingAnswers({});
-      toast.success("Study set generated: 20 MCQs + 20 Flashcards");
-      let sourcesSnapshot = [];
-      try {
-        const savedRaw = sessionStorage.getItem("educator_study_set");
-        const saved = savedRaw ? JSON.parse(savedRaw) : null;
-        if (Array.isArray(saved?.sources)) {
-          sourcesSnapshot = saved.sources;
-        }
-      } catch (_error) {}
-      const studySetPayload = {
-        mcqs: generatedMcqs,
-        flashcards: generatedFlashcards,
-        summary: String(data?.summary || "").trim(),
-        mcqSetId: data?.mcqSetId || "",
-        sourceType: inputMode || (uploadFile || storedFileId ? "file" : "text"),
-        sourcePreview: inputMode === "text" ? textValue.slice(0, 300) : storedFileName || uploadFile?.name || "",
-        sourceText: inputMode === "text" ? textValue : "",
-        sourceFileId: storedFileId,
-        sourceFileName: storedFileName,
-        sources: sourcesSnapshot,
-        difficultyByMode: {
-          mcq: String(difficulty || "medium"),
-          flashcards: String(difficulty || "medium"),
-          fill_blanks: "medium",
-          true_false: "medium",
-        },
-      };
-      sessionStorage.setItem("educator_study_set", JSON.stringify(studySetPayload));
-      navigate(navigateTo, { state: studySetPayload });
-    } catch (error) {
-      console.error(error);
-      toast.error(getReadableErrorMessage(error, "Failed to generate study set"));
-    } finally {
-      setLoadingStudySet(false);
-    }
-  };
-
-  const handleGenerateStudySet = async () => {
-    if (!canGenerate) {
-      toast.info("Enter text or upload a file first");
-      return;
-    }
-    await generateStudySetFromSource();
-    if (inputMode === "file" && storedFileId) {
-      setLastSource({ mode: "file", fileId: storedFileId, label: storedFileName });
-    } else if (inputMode === "file" && uploadFile) {
-      setLastSource({ mode: "file", file: uploadFile, label: uploadFile.name });
-    } else {
-      setLastSource({ mode: "text", text: textValue });
-    }
-  };
-
-  const handleGenerateOtherResponseSameSource = async () => {
-    if (!lastSource) {
-      toast.info("No previous source found. Generate once first.");
-      return;
-    }
-    await generateStudySetFromSource(lastSource);
-  };
-
-  const extractOptionKey = (value) => {
-    const match = String(value || "").trim().match(/^([A-Da-d])(?:[).:\s-]|$)/);
-    return match ? match[1].toUpperCase() : "";
-  };
-
-  const normalizeOptionText = (value) =>
-    String(value || "")
-      .trim()
-      .replace(/^[A-Da-d](?:[).:\s-]+|$)/, "")
-      .toLowerCase();
-
-  const isCorrectOption = (option, answer) => {
-    const optionKey = extractOptionKey(option);
-    const answerKey = extractOptionKey(answer);
-    if (optionKey && answerKey) {
-      return optionKey === answerKey;
-    }
-    const normalizedOption = normalizeOptionText(option);
-    const normalizedAnswer = normalizeOptionText(answer);
-    return normalizedOption === normalizedAnswer;
-  };
-
-  const verifyMcqAnswer = async (questionIndex, selectedAnswer) => {
-    if (!mcqSetId) {
-      throw new Error("MCQ session missing. Please generate study set again.");
-    }
-    const response = await fetch(`${API_BASE}/api/verify/mcq`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mcqSetId,
-        questionIndex,
-        selectedAnswer,
-      }),
-    });
-
-    if (!response.ok) {
-      let message = "Verification failed";
-      try {
-        const errorJson = await response.json();
-        message = errorJson.error || message;
-      } catch (_error) {
-        const errorText = await response.text();
-        if (errorText) {
-          message = errorText;
-        }
-      }
-      throw new Error(message);
-    }
-
-    return response.json();
-  };
-
-  const handleMcqAnswer = async (questionIndex, option) => {
-    if (mcqVerdicts[questionIndex] || verifyingAnswers[questionIndex]) {
-      return;
-    }
-
-    setVerifyingAnswers((prev) => ({ ...prev, [questionIndex]: true }));
-    try {
-      const mcq = mcqs[questionIndex];
-      const verdict = await verifyMcqAnswer(questionIndex, option);
-      setMcqVerdicts((prev) => ({
-        ...prev,
-        [questionIndex]: {
-          selectedAnswer: option,
-          isCorrect: Boolean(verdict?.is_correct),
-          correctAnswer: verdict?.correct_answer || mcq.answer || "",
-          correctIndex: Number.isInteger(verdict?.correct_index) ? verdict.correct_index : null,
-          correctOption: verdict?.correct_option || "",
-          explanation: verdict?.explanation || "Checked with stored answer key.",
-        },
-      }));
-    } catch (error) {
-      console.error(error);
-      toast.error(getReadableErrorMessage(error, "Failed to verify answer"));
-    } finally {
-      setVerifyingAnswers((prev) => {
-        const next = { ...prev };
-        delete next[questionIndex];
-        return next;
-      });
-    }
-  };
-
-  const answeredCount = Object.keys(mcqVerdicts).length;
-  const totalMcqCount = mcqs.length;
-  const correctCount = Object.values(mcqVerdicts).reduce(
-    (score, verdict) => score + (verdict?.isCorrect ? 1 : 0),
-    0
-  );
-  const allAnswered = totalMcqCount > 0 && answeredCount === totalMcqCount;
-
   const saveCurrentSession = async () => {
     const activeSource = getActiveSource();
     const sourceType =
@@ -438,8 +230,8 @@ function UploadPage({ user }) {
       hadFlashcards: flashcards.length > 0,
       hadFillBlanks: fillBlanks.length > 0,
       hadTrueFalse: trueFalse.length > 0,
-      mcqTotal: totalMcqCount,
-      mcqCorrect: correctCount,
+      mcqTotal: mcqs.length,
+      mcqCorrect: 0,
       mcqs,
       flashcards,
       fillBlanks,
@@ -531,6 +323,8 @@ function UploadPage({ user }) {
   const handleGenerateOtherSource = async () => {
     // Important: clear stored session, otherwise the restore effect will bring old results back.
     sessionStorage.removeItem("educator_study_set");
+    sessionStorage.removeItem("educator_exam_mock");
+    setExamModalOpen(false);
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl);
     }
@@ -582,6 +376,11 @@ function UploadPage({ user }) {
     setSummaryGenerating(false);
     setAudioLoading(false);
     setLoadingStudySet(false);
+    setExamMock(null);
+    setExamSyllabus("");
+    setExamPast("");
+    setExamSyllabusFile(null);
+    setExamPastFile(null);
   };
 
   const getActiveSource = () => {
@@ -765,6 +564,10 @@ function UploadPage({ user }) {
   const addSourceFromModal = () => {
     if (!canGenerate) {
       toast.info("Add text or upload a file first");
+      return;
+    }
+    if (inputMode === "file" && uploadFile && !storedFileId) {
+      toast.info("Please wait for the file upload to finish, then add the source.");
       return;
     }
     const nextSource =
@@ -1298,6 +1101,10 @@ function UploadPage({ user }) {
         setListening(false);
         setLastSource(null);
         sessionStorage.removeItem("educator_study_set");
+        sessionStorage.removeItem("educator_exam_mock");
+        setExamMock(null);
+        setExamSyllabus("");
+        setExamPast("");
       }
       if (next.length > 0) {
         persistSourcesSnapshot(next);
@@ -1344,6 +1151,87 @@ function UploadPage({ user }) {
       return "";
     } finally {
       setAudioLoading(false);
+    }
+  };
+
+  const handleGenerateMockExam = async () => {
+    const activeSource = getActiveSource();
+    const syllabusText = examSyllabus.trim() || textValue.trim();
+    const hasSyllabusFile = !!examSyllabusFile;
+    const hasPastFile = !!examPastFile;
+    if (!syllabusText && !hasSyllabusFile && !activeSource) {
+      toast.info("Add a syllabus (text or file) or upload a source to generate the mock exam");
+      return;
+    }
+    try {
+      setExamGenerating(true);
+      let response;
+      if (syllabusText && !hasSyllabusFile && !hasPastFile) {
+        response = await fetch(`${API_BASE}/api/exam/mock`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            syllabus: syllabusText,
+            pastPapers: examPast.trim(),
+            totalQuestions: Number(examQuestions) || 20,
+            durationMinutes: Number(examDuration) || 60,
+          }),
+        });
+      } else {
+        const formData = new FormData();
+        formData.append("pastPapers", examPast.trim());
+        formData.append("totalQuestions", Number(examQuestions) || 20);
+        formData.append("durationMinutes", Number(examDuration) || 60);
+        if (hasSyllabusFile) {
+          formData.append("file", examSyllabusFile);
+          formData.append("mode", "file");
+        } else if (syllabusText) {
+          formData.append("syllabus", syllabusText);
+        } else if (activeSource?.mode === "file" && activeSource.fileId) {
+          formData.append("fileId", activeSource.fileId);
+          formData.append("mode", "file");
+        } else if (activeSource?.mode === "file" && activeSource.file instanceof File) {
+          formData.append("file", activeSource.file);
+          formData.append("mode", "file");
+        } else if (activeSource?.mode === "text" && activeSource.text) {
+          formData.append("text", activeSource.text);
+          formData.append("mode", "text");
+        }
+        if (hasPastFile) {
+          formData.append("pastFile", examPastFile);
+        }
+        if (activeSource?.mode === "file" && activeSource.fileId) {
+          formData.append("fileId", activeSource.fileId);
+          formData.append("mode", "file");
+        } else if (activeSource?.mode === "file" && activeSource.file instanceof File) {
+          formData.append("file", activeSource.file);
+          formData.append("mode", "file");
+        } else if (activeSource?.mode === "text" && activeSource.text) {
+          formData.append("text", activeSource.text);
+          formData.append("mode", "text");
+        }
+        response = await fetch(`${API_BASE}/api/exam/mock`, { method: "POST", body: formData });
+      }
+      const raw = await response.text();
+      let data = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch (_err) {
+        data = null;
+      }
+      if (!response.ok) {
+        throw new Error(data?.error || raw || "Failed to generate mock exam");
+      }
+      const nextMock = data?.mockExam;
+      setExamMock(nextMock);
+      sessionStorage.setItem("educator_exam_mock", JSON.stringify(nextMock || {}));
+      toast.success("Mock exam ready");
+      navigate("/exam-mock", { state: { mockExam: nextMock } });
+    } catch (error) {
+      console.error(error);
+      toast.error(getReadableErrorMessage(error, "Failed to generate mock exam"));
+    } finally {
+      setExamGenerating(false);
     }
   };
 
@@ -1666,7 +1554,21 @@ function UploadPage({ user }) {
                   {summaryGenerating && <span className="tool-action-spinner" aria-hidden="true" />}
                 </button>
               </div>
-
+              <div className="mock-exam-panel">
+                <div className="mock-exam-header">
+                  <div>
+                    <h3>Exam Blueprint / Mock Test</h3>
+                    <p>Paste syllabus and (optionally) past papers. We will bias questions per section and timebox.</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="primary-action-btn"
+                    onClick={() => setExamModalOpen(true)}
+                  >
+                    Open
+                  </button>
+                </div>
+              </div>
             </div>
           </section>
         </div>
@@ -1726,6 +1628,94 @@ function UploadPage({ user }) {
                   Add Source
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {examModalOpen && (
+        <div className="modal-overlay" role="presentation" onClick={() => setExamModalOpen(false)}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="exam-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button type="button" className="modal-close" onClick={() => setExamModalOpen(false)} aria-label="Close">
+              x
+            </button>
+            <header className="modal-header">
+              <h2 id="exam-modal-title">Exam Blueprint / Mock Test</h2>
+              <p>Upload syllabus and past papers, or paste text. We will generate a timed mock exam.</p>
+            </header>
+            <div className="modal-body exam-modal-body">
+              <div className="field">
+                <span>Syllabus text</span>
+                <textarea
+                  value={examSyllabus}
+                  onChange={(e) => setExamSyllabus(e.target.value)}
+                  placeholder="Paste syllabus bullets or learning objectives..."
+                  rows={4}
+                />
+              </div>
+              <div className="field">
+                <span>Syllabus file (pdf/docx/pptx/txt)</span>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.pptx,.txt"
+                  onChange={(e) => setExamSyllabusFile(e.target.files?.[0] || null)}
+                />
+                {examSyllabusFile && <p className="file-hint">Using: {examSyllabusFile.name}</p>}
+              </div>
+              <div className="field">
+                <span>Past papers text (optional)</span>
+                <textarea
+                  value={examPast}
+                  onChange={(e) => setExamPast(e.target.value)}
+                  placeholder="Paste question stems or previous papers..."
+                  rows={3}
+                />
+              </div>
+              <div className="field">
+                <span>Past papers file (optional)</span>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.pptx,.txt"
+                  onChange={(e) => setExamPastFile(e.target.files?.[0] || null)}
+                />
+                {examPastFile && <p className="file-hint">Using: {examPastFile.name}</p>}
+              </div>
+              <div className="mock-exam-controls">
+                <label>
+                  Total questions
+                  <input
+                    type="number"
+                    min="5"
+                    max="80"
+                    value={examQuestions}
+                    onChange={(e) => setExamQuestions(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Duration (minutes)
+                  <input
+                    type="number"
+                    min="20"
+                    max="240"
+                    value={examDuration}
+                    onChange={(e) => setExamDuration(e.target.value)}
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="ghost-btn" onClick={() => setExamModalOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => { setExamModalOpen(false); handleGenerateMockExam(); }} disabled={examGenerating}>
+                {examGenerating ? "Generating..." : "Generate Mock Exam"}
+              </button>
             </div>
           </div>
         </div>

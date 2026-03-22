@@ -14,6 +14,7 @@ import HistoryPage from "./components/upload/HistoryPage";
 import SummaryPage from "./components/upload/SummaryPage";
 import FillBlanksPage from "./components/upload/FillBlanksPage";
 import TrueFalsePage from "./components/upload/TrueFalsePage";
+import ExamMockPage from "./components/upload/ExamMockPage";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -197,6 +198,14 @@ function App() {
           element={
             <ProtectedRoute user={user}>
               <TrueFalsePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/exam-mock"
+          element={
+            <ProtectedRoute user={user}>
+              <ExamMockPage />
             </ProtectedRoute>
           }
         />

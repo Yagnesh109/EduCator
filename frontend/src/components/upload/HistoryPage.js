@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
 import { API_BASE } from "../../config/api";
@@ -10,15 +10,15 @@ function HistoryPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [expandedHistoryId, setExpandedHistoryId] = useState("");
 
-  const getReadableErrorMessage = (error, fallbackMessage) => {
+  const getReadableErrorMessage = useCallback((error, fallbackMessage) => {
     const raw = String(error?.message || "").toLowerCase();
     if (raw.includes("failed to fetch") || raw.includes("networkerror") || raw.includes("load failed")) {
       return `Cannot reach backend at ${API_BASE}. Start backend server and verify CORS/API URL.`;
     }
     return error?.message || fallbackMessage;
-  };
+  }, []);
 
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     try {
       setHistoryLoading(true);
       const response = await fetch(`${API_BASE}/api/history?limit=25`);
@@ -33,11 +33,11 @@ function HistoryPage() {
     } finally {
       setHistoryLoading(false);
     }
-  };
+  }, [getReadableErrorMessage]);
 
   useEffect(() => {
     loadHistory();
-  }, []);
+  }, [loadHistory]);
 
   const toggleHistoryDetails = (id) => {
     setExpandedHistoryId((prev) => (prev === id ? "" : id));

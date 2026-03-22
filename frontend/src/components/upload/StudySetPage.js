@@ -1,13 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { API_BASE } from "../../config/api";
+import { auth } from "../../firebase";
 import McqSection from "./McqSection";
 import FlashcardSection from "./FlashcardSection";
 import ExportSection from "./ExportSection";
 import SummarySection from "./SummarySection";
 import KnowledgeGapSection from "./KnowledgeGapSection";
 import DifficultySelect, { normalizeDifficulty } from "./DifficultySelect";
+import SpacedPlanSection from "./SpacedPlanSection";
+import VoiceTutorSection from "./VoiceTutorSection";
 
 function StudySetPage({ mode }) {
   const location = useLocation();
@@ -71,7 +74,14 @@ function StudySetPage({ mode }) {
   const [knowledgeGapLoading, setKnowledgeGapLoading] = useState(false);
   const [knowledgeGapResult, setKnowledgeGapResult] = useState(null);
   const [flashcardKnown, setFlashcardKnown] = useState({});
+  const [spacedBoxes, setSpacedBoxes] = useState(routeState?.spacedBoxes || {});
+  const [spacedSchedule, setSpacedSchedule] = useState(routeState?.spacedSchedule || []);
+  const [topics, setTopics] = useState(routeState?.topics || []);
+  const [topicsLoading, setTopicsLoading] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [revisionData, setRevisionData] = useState(null);
+  const [revisionLoading, setRevisionLoading] = useState(false);
+  const [voiceTutorOpen, setVoiceTutorOpen] = useState(false);
 
   const filteredMcqPairs = useMemo(() => mcqs.map((item, index) => ({ item, index })), [mcqs]);
   const filteredFlashcards = useMemo(() => flashcards, [flashcards]);
@@ -172,9 +182,80 @@ function StudySetPage({ mode }) {
   const totalCount = localMcqs.length;
   const correctCount = Object.values(localVerdicts).reduce((acc, item) => acc + (item?.isCorrect ? 1 : 0), 0);
   const allAnswered = totalCount > 0 && answeredCount === totalCount;
+  const flashKnownCount = Object.values(flashcardKnown || {}).filter((value) => value === true).length;
+  const flashTotalCount = flashcards.length;
+  const mcqAccuracy = answeredCount > 0 ? correctCount / answeredCount : 0;
+  const flashAccuracy = flashTotalCount > 0 ? flashKnownCount / flashTotalCount : 0;
+  const userId = auth?.currentUser?.uid || "";
+  const planId =
+    String(mcqSetId || sourceFileId || (sourceText ? `text:${sourceText.slice(0, 32)}` : "default")).trim() || "default";
 
   const currentMode = lockedMode ? initialTab : activeTab;
   const selectedDifficulty = difficultyByMode[currentMode] || "medium";
+
+  useEffect(() => {
+    fetchTopics();
+    if (flashcards.length > 0) {
+      syncSpacedPlan(flashcardKnown);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flashcards]);
+
+  useEffect(() => {
+    const loadPlan = async () => {
+      if (!userId || !planId) return;
+      try {
+        const response = await fetch(`${API_BASE}/api/spaced/load`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, planId }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          return;
+        }
+        if (data?.boxes) setSpacedBoxes(data.boxes);
+        if (Array.isArray(data?.schedule)) setSpacedSchedule(data.schedule);
+        updateSessionStorage({
+          spacedBoxes: data?.boxes || {},
+          spacedSchedule: Array.isArray(data?.schedule) ? data.schedule : [],
+        });
+      } catch (_err) {
+        // ignore load failure silently
+      }
+    };
+    loadPlan();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, planId]);
+
+  useEffect(() => {
+    if (answeredCount === 0) return;
+    let suggestion = "medium";
+    if (mcqAccuracy >= 0.8) {
+      suggestion = "hard";
+    } else if (mcqAccuracy <= 0.5) {
+      suggestion = "easy";
+    }
+    setDifficultyByMode((prev) => {
+      if (prev.mcq === suggestion) return prev;
+      toast.info(`Adaptive difficulty set to ${suggestion} for next MCQ generation`);
+      return { ...prev, mcq: suggestion };
+    });
+  }, [answeredCount, mcqAccuracy]);
+
+  useEffect(() => {
+    if (flashTotalCount === 0) return;
+    if (flashKnownCount === 0) return;
+    let suggestion = "medium";
+    const accuracy = flashAccuracy;
+    if (accuracy >= 0.85) suggestion = "hard";
+    else if (accuracy <= 0.5) suggestion = "easy";
+    setDifficultyByMode((prev) => {
+      if (prev.flashcards === suggestion) return prev;
+      toast.info(`Adaptive difficulty set to ${suggestion} for next flashcard generation`);
+      return { ...prev, flashcards: suggestion };
+    });
+  }, [flashAccuracy, flashKnownCount, flashTotalCount]);
 
   const updateSessionStorage = (partial) => {
     const savedRaw = sessionStorage.getItem("educator_study_set");
@@ -188,6 +269,69 @@ function StudySetPage({ mode }) {
     }
     const next = { ...saved, ...partial };
     sessionStorage.setItem("educator_study_set", JSON.stringify(next));
+  };
+
+  const syncSpacedPlan = async (nextKnownMap) => {
+    if (!flashcards || flashcards.length === 0) return;
+    const payload = {
+      flashcards,
+      marks: Object.entries(nextKnownMap || {}).reduce((acc, [index, known]) => {
+        acc[String(index)] = known ? "known" : "review";
+        return acc;
+      }, {}),
+      previous: spacedBoxes,
+    };
+    try {
+      const response = await fetch(`${API_BASE}/api/spaced/schedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || "Spaced repetition scheduling failed");
+      }
+      const boxes = data?.boxes || {};
+      const schedule = Array.isArray(data?.schedule) ? data.schedule : [];
+      setSpacedBoxes(boxes);
+      setSpacedSchedule(schedule);
+      updateSessionStorage({ spacedBoxes: boxes, spacedSchedule: schedule });
+      if (userId) {
+        try {
+          await fetch(`${API_BASE}/api/spaced/save`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId, planId, boxes, schedule }),
+          });
+        } catch (_err) {
+          // non-blocking
+        }
+      }
+    } catch (error) {
+      toast.error(error?.message || "Unable to schedule reviews");
+    }
+  };
+
+  const fetchTopics = async () => {
+    if (topicsLoading) return;
+    if (topics && topics.length > 0) return;
+    const form = buildSourceFormData(selectedDifficulty);
+    if (!form) return;
+    setTopicsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/analyze/topics`, { method: "POST", body: form });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || "Topic extraction failed");
+      }
+      const nextTopics = Array.isArray(data?.topics) ? data.topics : [];
+      setTopics(nextTopics);
+      updateSessionStorage({ topics: nextTopics });
+    } catch (error) {
+      console.warn(error);
+    } finally {
+      setTopicsLoading(false);
+    }
   };
 
   const buildSourceFormData = (difficulty) => {
@@ -275,9 +419,13 @@ function StudySetPage({ mode }) {
         }
         setFlashcards(nextFlashcards);
         setFlashcardKnown({});
+        setSpacedBoxes({});
+        setSpacedSchedule([]);
         setKnowledgeGapResult(null);
         updateSessionStorage({
           flashcards: nextFlashcards,
+          spacedBoxes: {},
+          spacedSchedule: [],
           difficultyByMode: { ...difficultyByMode, flashcards: difficulty },
         });
       }
@@ -327,6 +475,40 @@ function StudySetPage({ mode }) {
       toast.error(error.message || "Export failed");
     } finally {
       setExportingFormat("");
+    }
+  };
+
+  const handleSmartRevision = async () => {
+    if (revisionLoading) return;
+    setRevisionLoading(true);
+    try {
+      const attempts = Object.keys(mcqVerdicts).reduce((acc, key) => {
+        const verdict = mcqVerdicts[key];
+        if (verdict?.selectedAnswer) acc[key] = verdict.selectedAnswer;
+        return acc;
+      }, {});
+      const payload = {
+        mcqs,
+        attempts,
+        flashcards,
+        spacedSchedule,
+      };
+      const response = await fetch(`${API_BASE}/api/revision/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || "Revision failed");
+      }
+      setRevisionData(data);
+      toast.success("Smart Revision ready");
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || "Smart Revision failed");
+    } finally {
+      setRevisionLoading(false);
     }
   };
 
@@ -451,15 +633,23 @@ function StudySetPage({ mode }) {
         <header className="upload-header">
           <h1>Study Set Workspace</h1>
           <p>Review MCQs, flashcards, and summaries from your study set.</p>
-          <DifficultySelect
-            value={selectedDifficulty}
-            onChange={(value) => {
-              const next = normalizeDifficulty(value);
-              setDifficultyByMode((prev) => ({ ...prev, [currentMode]: next }));
-              regenerateForDifficulty(next);
-            }}
-            disabled={regenerating}
-          />
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <DifficultySelect
+              value={selectedDifficulty}
+              onChange={(value) => {
+                const next = normalizeDifficulty(value);
+                setDifficultyByMode((prev) => ({ ...prev, [currentMode]: next }));
+                regenerateForDifficulty(next);
+              }}
+              disabled={regenerating}
+            />
+            <button type="button" className="ghost-btn" onClick={handleSmartRevision} disabled={revisionLoading}>
+              {revisionLoading ? "Preparing..." : "Start Smart Revision"}
+            </button>
+            <button type="button" className="ghost-btn" onClick={() => setVoiceTutorOpen((prev) => !prev)}>
+              {voiceTutorOpen ? "Close Voice Tutor" : "Start Voice Tutor"}
+            </button>
+          </div>
         </header>
 
         <ExportSection
@@ -512,7 +702,13 @@ function StudySetPage({ mode }) {
             <FlashcardSection
               flashcards={filteredFlashcards}
               knownMap={flashcardKnown}
-              onMark={(index, known) => setFlashcardKnown((prev) => ({ ...prev, [index]: known }))}
+              onMark={(index, known) => {
+                setFlashcardKnown((prev) => {
+                  const next = { ...prev, [index]: known };
+                  syncSpacedPlan(next);
+                  return next;
+                });
+              }}
             />
           ) : (
             <section className="result-section">
@@ -523,19 +719,72 @@ function StudySetPage({ mode }) {
         )}
 
       {!lockedMode && (
-        <SummarySection
-          summary={summary}
-          onSpeak={handleSpeakSummary}
-          audioLoading={audioLoading}
-          onGenerateAudio={handleGenerateAudio}
-          audioUrl={audioUrl}
-          ttsLanguage={ttsLanguage}
-          onTtsLanguageChange={setTtsLanguage}
-          ttsLanguages={ttsLanguages}
+      <SummarySection
+        summary={summary}
+        onSpeak={handleSpeakSummary}
+        audioLoading={audioLoading}
+        onGenerateAudio={handleGenerateAudio}
+        audioUrl={audioUrl}
+        ttsLanguage={ttsLanguage}
+        onTtsLanguageChange={setTtsLanguage}
+        ttsLanguages={ttsLanguages}
+        topics={topics}
+        topicsLoading={topicsLoading}
+      />
+    )}
+
+        <SpacedPlanSection
+          schedule={spacedSchedule}
+          onReset={async () => {
+            setSpacedBoxes({});
+            setSpacedSchedule([]);
+            updateSessionStorage({ spacedBoxes: {}, spacedSchedule: [] });
+            if (userId) {
+              try {
+                await fetch(`${API_BASE}/api/spaced/save`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ userId, planId, boxes: {}, schedule: [] }),
+                });
+              } catch (_err) {}
+            }
+          }}
         />
-      )}
 
         <KnowledgeGapSection result={knowledgeGapResult} loading={knowledgeGapLoading} onAnalyze={handleAnalyzeKnowledgeGaps} />
+
+        {revisionData && (
+          <section className="result-section">
+            <h3>Smart Revision</h3>
+            {revisionData.weakTopics && revisionData.weakTopics.length > 0 && (
+              <ul className="result-options">
+                {revisionData.weakTopics.map((t) => (
+                  <li key={t.topic}>
+                    {t.topic} — accuracy {(t.accuracy * 100).toFixed(0)}% ({t.attempted} attempts)
+                  </li>
+                ))}
+              </ul>
+            )}
+            {revisionData.flashcards && revisionData.flashcards.length > 0 && (
+              <FlashcardSection flashcards={revisionData.flashcards} />
+            )}
+            {revisionData.quiz && revisionData.quiz.length > 0 && (
+              <McqSection
+                mcqs={revisionData.quiz}
+                mcqVerdicts={{}}
+                verifyingAnswers={{}}
+                onAnswer={() => {}}
+                isCorrectOption={() => false}
+                allAnswered={false}
+                correctCount={0}
+                answeredCount={0}
+                totalMcqCount={revisionData.quiz.length}
+              />
+            )}
+          </section>
+        )}
+
+        {voiceTutorOpen && <VoiceTutorSection apiBase={API_BASE} />}
 
         <div className="other-source-wrap dual-actions" style={{ marginTop: "0.9rem" }}>
           <button type="button" className="ghost-btn" onClick={() => navigate("/uplod")}>

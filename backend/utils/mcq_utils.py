@@ -16,6 +16,9 @@ def _repair_json_text(text):
     repaired = re.sub(r",\s*([\]}])", r"\1", repaired)
     repaired = _escape_unquoted_inner_quotes(repaired)
     repaired = _close_unterminated_strings(repaired)
+    # Fix missing commas between properties (e.g. "value" \n "key": ...)
+    repaired = re.sub(r'(["\]}]\s*)\n(\s*")', r'\1,\n\2', repaired)
+    repaired = re.sub(r'(\d|true|false|null)(\s*)\n(\s*")', r'\1,\2\n\3', repaired)
     repaired = _balance_brackets(repaired)
     return repaired
 
@@ -48,7 +51,7 @@ def _escape_unquoted_inner_quotes(text):
         if char == '"':
             if in_string:
                 next_char = _next_non_space(idx + 1)
-                if next_char and next_char not in (",", "}", "]"):
+                if next_char and next_char not in (",", "}", "]", ":"):
                     out.append('\\"')
                     continue
                 in_string = False

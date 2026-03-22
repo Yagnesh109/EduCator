@@ -13,6 +13,7 @@ except ImportError:  # pragma: no cover
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
 FIREBASE_SERVICE_ACCOUNT_PATH = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "")
 FIREBASE_SESSION_COLLECTION = os.getenv("FIREBASE_SESSION_COLLECTION", "study_sessions")
+FIREBASE_SPACED_COLLECTION = os.getenv("FIREBASE_SPACED_COLLECTION", "spaced_plans")
 
 FIREBASE_DB = None
 FIREBASE_INIT_ERROR = ""
@@ -170,3 +171,48 @@ def delete_history_item(doc_id):
     ref = db.collection(FIREBASE_SESSION_COLLECTION).document(str(doc_id))
     ref.delete()
     return True, ""
+
+
+def save_spaced_plan(user_id, plan_id, boxes, schedule):
+    db = get_firestore_db()
+    if db is None:
+        return False, FIREBASE_INIT_ERROR or "Firebase is not configured"
+    if not user_id or not plan_id:
+        return False, "userId and planId are required"
+    try:
+        doc_ref = db.collection(FIREBASE_SPACED_COLLECTION).document(f"{user_id}__{plan_id}")
+        doc_ref.set(
+            {
+                "userId": user_id,
+                "planId": plan_id,
+                "boxes": boxes or {},
+                "schedule": schedule or [],
+                "updatedAt": datetime.now(timezone.utc).isoformat(),
+                "updatedAtEpoch": int(time.time()),
+            }
+        )
+        return True, ""
+    except Exception:
+        return False, "Failed to save spaced plan"
+
+
+def load_spaced_plan(user_id, plan_id):
+    db = get_firestore_db()
+    if db is None:
+        return None, FIREBASE_INIT_ERROR or "Firebase is not configured"
+    if not user_id or not plan_id:
+        return None, "userId and planId are required"
+    try:
+        doc_ref = db.collection(FIREBASE_SPACED_COLLECTION).document(f"{user_id}__{plan_id}")
+        doc = doc_ref.get()
+        if not doc.exists:
+            return None, ""
+        data = doc.to_dict() or {}
+        return {
+            "boxes": data.get("boxes", {}),
+            "schedule": data.get("schedule", []),
+            "updatedAt": data.get("updatedAt", ""),
+            "planId": data.get("planId", plan_id),
+        }, ""
+    except Exception:
+        return None, "Failed to load spaced plan"

@@ -894,6 +894,85 @@ button:disabled {
   justify-self: end;
 }
 
+.mock-exam-panel {
+  margin-top: 0.6rem;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  padding: 0.9rem;
+  background: #f8fafc;
+}
+
+.mock-exam-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.mock-exam-panel .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+
+.mock-exam-panel textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 90px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  padding: 10px;
+  font-family: inherit;
+}
+
+.mock-exam-controls {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.mock-exam-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+}
+
+.mock-exam-controls input {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.exam-modal-body textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 10px;
+  font-family: inherit;
+}
+
+.exam-modal-body .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.exam-modal-body input[type="file"] {
+  border: 1px dashed #cbd5e1;
+  padding: 8px;
+  border-radius: 10px;
+}
+
+.file-hint {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+}
+
 .tool-view-btn {
   grid-column: span 2;
   background: #1f4fd1;

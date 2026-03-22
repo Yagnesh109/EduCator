@@ -26,6 +26,7 @@ from routes.export import router as export_router  # noqa: E402
 from routes.generate import router as generate_router  # noqa: E402
 from routes.history import router as history_router  # noqa: E402
 from routes.misc import router as misc_router  # noqa: E402
+from routes.analyze import router as analyze_router  # noqa: E402
 from routes.qa import router as qa_router  # noqa: E402
 from routes.recommend import router as recommend_router  # noqa: E402
 from routes.tts import router as tts_router  # noqa: E402
@@ -33,6 +34,10 @@ from routes.tools import router as tools_router  # noqa: E402
 from routes.translate import router as translate_router  # noqa: E402
 from routes.verify import router as verify_router  # noqa: E402
 from routes.voice_qa import router as voice_qa_router  # noqa: E402
+from routes.spaced import router as spaced_router  # noqa: E402
+from routes.revision import router as revision_router  # noqa: E402
+from routes.voice_tutor import router as voice_tutor_router  # noqa: E402
+from routes.exam import router as exam_router  # noqa: E402
 
 app = FastAPI(title="EduCator Backend")
 
@@ -45,6 +50,7 @@ app.add_middleware(
 )
 
 app.include_router(misc_router)
+app.include_router(analyze_router)
 app.include_router(tools_router)
 app.include_router(generate_router)
 app.include_router(verify_router)
@@ -56,6 +62,10 @@ app.include_router(recommend_router)
 app.include_router(translate_router)
 app.include_router(qa_router)
 app.include_router(voice_qa_router)
+app.include_router(spaced_router)
+app.include_router(revision_router)
+app.include_router(voice_tutor_router)
+app.include_router(exam_router)
 
 if __name__ == "__main__":
     import uvicorn

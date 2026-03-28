@@ -8,19 +8,37 @@ function FlashcardSection({ flashcards, knownMap = null, onMark = null }) {
       <h3>Flashcards</h3>
       <div className="flashcard-grid">
         {flashcards.map((item, index) => {
+          const imageUrl =
+            item?.imageUrl ||
+            item?.imageURL ||
+            item?.image_url ||
+            item?.image ||
+            "";
           const selection = knownMap ? knownMap[index] : undefined;
           const canMark = typeof onMark === "function";
           return (
             <div key={`fc-wrap-${index}`}>
-              <article className="flip-card" key={`fc-${index}`}>
+              <article className={`flip-card ${imageUrl ? "flip-card-with-image" : ""}`} key={`fc-${index}`}>
                 <div className="flip-card-inner">
-                  <div className="flip-card-face flip-card-front">
+                  <div className={`flip-card-face flip-card-front ${imageUrl ? "flashcard-has-image" : ""}`}>
                     <p className="flashcard-label">Question</p>
-                    <p className="flashcard-text">{item.front}</p>
+                    {imageUrl && (
+                      <img
+                        className="flashcard-image"
+                        src={imageUrl}
+                        alt={item.topic || item.front || "Flashcard visual"}
+                        loading="lazy"
+                      />
+                    )}
+                    <div className="flashcard-scroll">
+                      <p className="flashcard-text">{item.front}</p>
+                    </div>
                   </div>
                   <div className="flip-card-face flip-card-back">
                     <p className="flashcard-label">Answer</p>
-                    <p className="flashcard-text">{item.back}</p>
+                    <div className="flashcard-scroll">
+                      <p className="flashcard-text">{item.back}</p>
+                    </div>
                   </div>
                 </div>
               </article>

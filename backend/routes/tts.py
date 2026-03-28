@@ -3,15 +3,19 @@ import json
 from urllib.parse import quote
 from urllib.request import urlopen
 
-from fastapi import APIRouter, Body, Response
+from fastapi import APIRouter, Body, Request, Response
 from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
 
 @router.post("/api/tts")
-def generate_tts_audio(payload: dict = Body(default=None)):
+def generate_tts_audio(request: Request, payload: dict = Body(default=None)):
     try:
+        from utils.premium_guard import require_feature
+
+        require_feature(request, "audio_summary")
+
         payload = payload or {}
         text = str(payload.get("text", "")).strip()
         language = str(payload.get("language", "en")).strip().lower() or "en"

@@ -1,6 +1,6 @@
 import { API_BASE } from "../../config/api";
 
-function buildSourceFormData(source, tool, difficulty = "medium", count = 10) {
+function buildSourceFormData(source, tool, difficulty = "medium", count = 10, options = {}) {
   const formData = new FormData();
   const normalizedTool = String(tool || "").trim();
   if (!normalizedTool) {
@@ -9,6 +9,9 @@ function buildSourceFormData(source, tool, difficulty = "medium", count = 10) {
   formData.append("tool", normalizedTool);
   formData.append("difficulty", String(difficulty || "medium"));
   formData.append("count", String(count || 10));
+  if (options?.includeImages) {
+    formData.append("includeImages", "1");
+  }
 
   if (source?.mode === "multi" && Array.isArray(source?.sources) && source.sources.length > 0) {
     let hasAny = false;
@@ -39,12 +42,13 @@ function buildSourceFormData(source, tool, difficulty = "medium", count = 10) {
   return null;
 }
 
-async function generateWithTool({ tool, source, difficulty = "medium", count = 10 }) {
-  const formData = buildSourceFormData(source, tool, difficulty, count);
+async function generateWithTool({ tool, source, difficulty = "medium", count = 10, includeImages = false, authToken = "" }) {
+  const formData = buildSourceFormData(source, tool, difficulty, count, { includeImages });
   if (!formData) {
     throw new Error("Source missing. Provide text or file.");
   }
-  const response = await fetch(`${API_BASE}/api/tools/generate`, { method: "POST", body: formData });
+  const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
+  const response = await fetch(`${API_BASE}/api/tools/generate`, { method: "POST", body: formData, headers });
   const rawText = await response.text();
   let data = {};
   try {

@@ -1,2 +1,2 @@
-python -m uvicorn app:app --reload --port:5000
+python -m uvicorn app:app --reload --port 5000
 npm start

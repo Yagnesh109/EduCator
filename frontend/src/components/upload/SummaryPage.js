@@ -2,10 +2,13 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { API_BASE } from "../../config/api";
+import { auth } from "../../firebase";
 import ExportSection from "./ExportSection";
 import SummarySection from "./SummarySection";
+import usePremium from "../../premium/usePremium";
 
 function SummaryPage() {
+  const premium = usePremium();
   const ttsLanguages = [
     { value: "en", label: "English" },
     { value: "hi", label: "Hindi" },
@@ -18,7 +21,13 @@ function SummaryPage() {
   ];
   const location = useLocation();
   const navigate = useNavigate();
-  const savedStateRaw = sessionStorage.getItem("educator_study_set");
+  const savedStateRaw = (() => {
+    try {
+      return localStorage.getItem("educator_study_set") || sessionStorage.getItem("educator_study_set");
+    } catch (_error) {
+      return sessionStorage.getItem("educator_study_set");
+    }
+  })();
   let savedState = null;
   if (savedStateRaw) {
     try {
@@ -57,9 +66,10 @@ function SummaryPage() {
     }
     try {
       setAudioLoading(true);
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
       const response = await fetch(`${API_BASE}/api/tts`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ text: summary, language: ttsLanguage, translate: true }),
       });
       if (!response.ok) {
@@ -166,6 +176,8 @@ function SummaryPage() {
           ttsLanguage={ttsLanguage}
           onTtsLanguageChange={setTtsLanguage}
           ttsLanguages={ttsLanguages}
+          audioLocked={!premium.canUse("audio_summary")}
+          onUpgrade={() => navigate("/premium")}
         />
         <div style={{ textAlign: "center", marginTop: "1rem" }}>
           <button type="button" onClick={handleGoBack}>

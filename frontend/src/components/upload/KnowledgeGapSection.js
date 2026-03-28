@@ -1,4 +1,4 @@
-function KnowledgeGapSection({ result, loading, onAnalyze }) {
+function KnowledgeGapSection({ result, loading, onAnalyze, locked = false, onUpgrade = null }) {
   const weakTopics = Array.isArray(result?.weakTopics) ? result.weakTopics : [];
   const recommendedStudy = Array.isArray(result?.recommendedStudy) ? result.recommendedStudy : [];
   const conceptExplanations = Array.isArray(result?.conceptExplanations) ? result.conceptExplanations : [];
@@ -18,11 +18,18 @@ function KnowledgeGapSection({ result, loading, onAnalyze }) {
       <div className="summary-header">
         <h3>Knowledge Gap Detector</h3>
         <div className="summary-actions">
-          <button type="button" className="ghost-btn" onClick={onAnalyze} disabled={loading}>
-            {loading ? "Analyzing..." : "Analyze Knowledge Gaps"}
+          <button
+            type="button"
+            className="ghost-btn"
+            onClick={locked ? onUpgrade : onAnalyze}
+            disabled={loading}
+          >
+            {locked ? "Upgrade to Unlock" : loading ? "Analyzing..." : "Analyze Knowledge Gaps"}
           </button>
         </div>
       </div>
+
+      {locked && <p className="topic-empty-text">This feature is available on Premium plans.</p>}
 
       {weakTopics.length === 0 && !loading && (
         <p className="topic-empty-text">No weak topics detected yet. Complete and analyze your quiz attempts.</p>

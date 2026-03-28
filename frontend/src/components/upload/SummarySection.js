@@ -12,6 +12,8 @@ function SummarySection({
   ttsLanguages,
   topics = [],
   topicsLoading = false,
+  audioLocked = false,
+  onUpgrade = null,
 }) {
   const audioRef = useRef(null);
   const autoplayPendingRef = useRef(false);
@@ -105,6 +107,12 @@ function SummarySection({
   }
 
   const handleSpeakClick = async () => {
+    if (audioLocked) {
+      if (typeof onUpgrade === "function") {
+        onUpgrade();
+      }
+      return;
+    }
     if (audioLoading) {
       return;
     }
@@ -153,7 +161,7 @@ function SummarySection({
             <h3>Summary</h3>
             <div className="summary-actions">
               <button type="button" className="summary-speak-btn" onClick={handleSpeakClick} disabled={audioLoading}>
-                {audioLoading ? "Preparing Audio..." : isPlaying ? "Pause" : "Speak"}
+                {audioLocked ? "Upgrade for Audio" : audioLoading ? "Preparing Audio..." : isPlaying ? "Pause" : "Speak"}
               </button>
               {audioUrl && (
                 <button type="button" className="summary-download-btn" onClick={handleDownload}>
@@ -162,16 +170,18 @@ function SummarySection({
               )}
             </div>
           </div>
-          <div className="summary-controls">
-            <label htmlFor="tts-language">Language</label>
-            <select id="tts-language" value={ttsLanguage} onChange={(event) => onTtsLanguageChange(event.target.value)}>
-              {(ttsLanguages || []).map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          {!audioLocked && (
+            <div className="summary-controls">
+              <label htmlFor="tts-language">Language</label>
+              <select id="tts-language" value={ttsLanguage} onChange={(event) => onTtsLanguageChange(event.target.value)}>
+                {(ttsLanguages || []).map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <pre className="summary-text">{displaySummary}</pre>
         </>
       )}

@@ -5,13 +5,57 @@ import { API_BASE } from "../../config/api";
 import InputSection from "./InputSection";
 import VoiceQASection from "./VoiceQASection";
 import generateWithTool from "./generateTool";
+import usePremium from "../../premium/usePremium";
+import { requiredPlanForFeature } from "../../premium/plans";
+import { auth } from "../../firebase";
+import CrownIcon from "../premium/CrownIcon";
 
 function UploadPage({ user }) {
+  const STUDY_SET_STORAGE_KEY = "educator_study_set";
+  const ACTIVE_HISTORY_ID_KEY = "educator_active_history_id";
+
+  const readStudySetRaw = () => {
+    try {
+      return localStorage.getItem(STUDY_SET_STORAGE_KEY) || sessionStorage.getItem(STUDY_SET_STORAGE_KEY) || "";
+    } catch (_error) {
+      return sessionStorage.getItem(STUDY_SET_STORAGE_KEY) || "";
+    }
+  };
+
+  const writeStudySetRaw = (raw) => {
+    try {
+      localStorage.setItem(STUDY_SET_STORAGE_KEY, raw);
+    } catch (_error) {}
+    sessionStorage.setItem(STUDY_SET_STORAGE_KEY, raw);
+  };
+
+  const readStudySet = () => {
+    const raw = readStudySetRaw();
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch (_error) {
+      return null;
+    }
+  };
+
+  const writeStudySet = (payload) => {
+    writeStudySetRaw(JSON.stringify(payload || {}));
+  };
+
+  const clearStudySet = () => {
+    try {
+      localStorage.removeItem(STUDY_SET_STORAGE_KEY);
+    } catch (_error) {}
+    sessionStorage.removeItem(STUDY_SET_STORAGE_KEY);
+  };
+
   const displayName =
     user?.displayName ||
     user?.email?.split("@")[0] ||
     "Learner";
   const navigate = useNavigate();
+  const premium = usePremium();
   const [textValue, setTextValue] = useState("");
   const [uploadFile, setUploadFile] = useState(null);
   const [storedFileId, setStoredFileId] = useState("");
@@ -45,7 +89,6 @@ function UploadPage({ user }) {
   const [flashGenerating, setFlashGenerating] = useState(false);
   const [fillBlanksGenerating, setFillBlanksGenerating] = useState(false);
   const [trueFalseGenerating, setTrueFalseGenerating] = useState(false);
-  const [savingSession, setSavingSession] = useState(false);
   const [mcqReady, setMcqReady] = useState(false);
   const [flashReady, setFlashReady] = useState(false);
   const [fillBlanksReady, setFillBlanksReady] = useState(false);
@@ -57,21 +100,23 @@ function UploadPage({ user }) {
   const [audioUrl, setAudioUrl] = useState("");
   const [audioLoading, setAudioLoading] = useState(false);
   const [exportingFormat, setExportingFormat] = useState("");
-  const [examSyllabus, setExamSyllabus] = useState("");
-  const [examPast, setExamPast] = useState("");
-  const [examQuestions, setExamQuestions] = useState(20);
-  const [examDuration, setExamDuration] = useState(60);
-  const [examGenerating, setExamGenerating] = useState(false);
-  const [examMock, setExamMock] = useState(null);
-  const [examModalOpen, setExamModalOpen] = useState(false);
-  const [examSyllabusFile, setExamSyllabusFile] = useState(null);
-  const [examPastFile, setExamPastFile] = useState(null);
+  const handleOpenYoutubeGuidePage = () => {
+    if (!hasSource) {
+      toast.info("Add a source first");
+      return;
+    }
+    if (!premium.canUse("youtube_guide")) {
+      toast.info(`Upgrade to ${requiredPlanForFeature("youtube_guide")} to unlock YouTube Guide.`);
+      navigate("/premium");
+      return;
+    }
+    navigate("/youtube-guide");
+  };
 
   const persistSourceSession = (sourceType, sourcePreview, sourceText = "", sourceFileId = "", sourceFileName = "") => {
     let existing = {};
     try {
-      const savedRaw = sessionStorage.getItem("educator_study_set");
-      existing = savedRaw ? JSON.parse(savedRaw) || {} : {};
+      existing = readStudySet() || {};
     } catch (_error) {
       existing = {};
     }
@@ -98,7 +143,7 @@ function UploadPage({ user }) {
       summary: "",
       mcqSetId: "",
     };
-    sessionStorage.setItem("educator_study_set", JSON.stringify(payload));
+    writeStudySet(payload);
   };
 
   const resetGeneratedOutputs = () => {
@@ -201,6 +246,7 @@ function UploadPage({ user }) {
         setStoredFileId(nextFileId);
         setStoredFileName(nextFileName);
         persistSourceSession("file", nextFileName, "", nextFileId, nextFileName);
+        saveCurrentSession().catch((error) => console.warn("Auto-save failed", error));
       } catch (error) {
         console.error(error);
         toast.error(getReadableErrorMessage(error, "Failed to store uploaded file"));
@@ -223,9 +269,58 @@ function UploadPage({ user }) {
       activeSource?.label ||
       (activeSource?.mode === "text" ? activeSource.text?.slice(0, 300) : "") ||
       (inputMode === "text" ? textValue.slice(0, 300) : storedFileName || uploadFile?.name || "");
+
+    const safeSources = Array.isArray(sources)
+      ? sources
+          .map((item) => {
+            if (item?.mode === "text" && item?.text) {
+              return {
+                id: item.id,
+                mode: "text",
+                label: item.label,
+                text: item.text,
+              };
+            }
+            if (item?.mode === "file" && item?.fileId) {
+              return {
+                id: item.id,
+                mode: "file",
+                label: item.label,
+                fileId: item.fileId,
+              };
+            }
+            return null;
+          })
+          .filter(Boolean)
+      : [];
+
+    let existingSessionId = "";
+    try {
+      existingSessionId = String(localStorage.getItem(ACTIVE_HISTORY_ID_KEY) || "").trim();
+    } catch (_error) {
+      existingSessionId = "";
+    }
+
+    const savedSnapshot = readStudySet() || {};
+    const snapshotSourceText = String(savedSnapshot?.sourceText || "").trim();
+    const snapshotFileId = String(savedSnapshot?.sourceFileId || "").trim();
+    const snapshotFileName = String(savedSnapshot?.sourceFileName || "").trim();
+    const snapshotSources = Array.isArray(savedSnapshot?.sources) ? savedSnapshot.sources : [];
+    const difficultyByMode =
+      savedSnapshot?.difficultyByMode && typeof savedSnapshot.difficultyByMode === "object"
+        ? savedSnapshot.difficultyByMode
+        : {};
     const payload = {
+      sessionId: existingSessionId,
+      kind: "workspace",
       sourceType,
       sourcePreview,
+      sources: snapshotSources.length ? snapshotSources : safeSources,
+      sourceText: inputMode === "text" ? textValue : snapshotSourceText,
+      sourceFileId: storedFileId || snapshotFileId,
+      sourceFileName: storedFileName || snapshotFileName,
+      difficultyByMode,
+      mcqSetId,
       hadMcqs: mcqs.length > 0,
       hadFlashcards: flashcards.length > 0,
       hadFillBlanks: fillBlanks.length > 0,
@@ -260,71 +355,21 @@ function UploadPage({ user }) {
     if (!result?.stored) {
       throw new Error(result?.error || "History not stored. Check Firebase configuration.");
     }
-  };
-
-  const handleSaveAndGenerateOtherSource = async () => {
-    try {
-      setSavingSession(true);
-      await saveCurrentSession();
-      toast.success("Saved. Ready for another source.");
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
-      setAudioUrl("");
-      setTextValue("");
-      setUploadFile(null);
-      setStoredFileId("");
-      setStoredFileName("");
-      setInputMode("");
-      setSources([]);
-      setRagQuestion("");
-      setRagAnswer("");
-      setVoiceQuestion("");
-      setVoiceAnswer("");
-      setVoiceAnswerAudioUrl("");
-      setListening(false);
-      setMcqGenerating(false);
-      setFlashGenerating(false);
-      setMcqReady(false);
-      setFlashReady(false);
-      setMcqPayload(null);
-      setFlashPayload(null);
-      setMcqs([]);
-      setMcqSetId("");
-      setMcqVerdicts({});
-      setVerifyingAnswers({});
-      setFlashcards([]);
-      setSummary("");
-    } catch (error) {
-      console.error(error);
-      toast.error(getReadableErrorMessage(error, "Failed to save current session"));
-    } finally {
-      setSavingSession(false);
-    }
-  };
-
-  const handleSaveSessionOnly = async () => {
-    if (!hasSource && !hasResults) {
-      toast.info("Add a source or generate MCQs/flashcards first");
-      return;
-    }
-    try {
-      setSavingSession(true);
-      await saveCurrentSession();
-      toast.success("Session saved to history");
-    } catch (error) {
-      console.error(error);
-      toast.error(getReadableErrorMessage(error, "Failed to save current session"));
-    } finally {
-      setSavingSession(false);
+    if (result?.sessionId) {
+      try {
+        localStorage.setItem(ACTIVE_HISTORY_ID_KEY, String(result.sessionId));
+      } catch (_error) {}
     }
   };
 
   const handleGenerateOtherSource = async () => {
     // Important: clear stored session, otherwise the restore effect will bring old results back.
-    sessionStorage.removeItem("educator_study_set");
+    clearStudySet();
+    try {
+      localStorage.removeItem(ACTIVE_HISTORY_ID_KEY);
+      localStorage.removeItem("educator_exam_mock");
+    } catch (_error) {}
     sessionStorage.removeItem("educator_exam_mock");
-    setExamModalOpen(false);
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl);
     }
@@ -376,11 +421,6 @@ function UploadPage({ user }) {
     setSummaryGenerating(false);
     setAudioLoading(false);
     setLoadingStudySet(false);
-    setExamMock(null);
-    setExamSyllabus("");
-    setExamPast("");
-    setExamSyllabusFile(null);
-    setExamPastFile(null);
   };
 
   const getActiveSource = () => {
@@ -549,16 +589,8 @@ function UploadPage({ user }) {
           .filter(Boolean)
       : [];
 
-    const savedRaw = sessionStorage.getItem("educator_study_set");
-    let saved = {};
-    if (savedRaw) {
-      try {
-        saved = JSON.parse(savedRaw) || {};
-      } catch (_error) {
-        saved = {};
-      }
-    }
-    sessionStorage.setItem("educator_study_set", JSON.stringify({ ...saved, sources: safeSources }));
+    const saved = readStudySet() || {};
+    writeStudySet({ ...saved, sources: safeSources });
   };
 
   const addSourceFromModal = () => {
@@ -611,6 +643,7 @@ function UploadPage({ user }) {
       nextSource.mode === "file" ? nextSource.label : ""
     );
     closeSourceModal();
+    saveCurrentSession().catch((error) => console.warn("Auto-save failed", error));
   };
 
   const buildStudySetPayload = (data) => {
@@ -624,16 +657,14 @@ function UploadPage({ user }) {
       fill_blanks: "medium",
     };
     try {
-      const savedRaw = sessionStorage.getItem("educator_study_set");
-      const saved = savedRaw ? JSON.parse(savedRaw) : null;
+      const saved = readStudySet();
       if (saved?.difficultyByMode && typeof saved.difficultyByMode === "object") {
         difficultyByMode = { ...difficultyByMode, ...saved.difficultyByMode };
       }
     } catch (_error) {}
     let sourcesSnapshot = [];
     try {
-      const savedRaw = sessionStorage.getItem("educator_study_set");
-      const saved = savedRaw ? JSON.parse(savedRaw) : null;
+      const saved = readStudySet();
       if (Array.isArray(saved?.sources)) {
         sourcesSnapshot = saved.sources;
       }
@@ -656,7 +687,7 @@ function UploadPage({ user }) {
   };
 
   useEffect(() => {
-    const savedRaw = sessionStorage.getItem("educator_study_set");
+    const savedRaw = readStudySetRaw();
     if (!savedRaw) return;
     if (
       mcqs.length ||
@@ -684,6 +715,21 @@ function UploadPage({ user }) {
           setStoredFileId(String(primary.fileId));
           setStoredFileName(String(primary.label || "Uploaded file"));
           setLastSource({ mode: "file", fileId: String(primary.fileId), label: String(primary.label || "Uploaded file") });
+        }
+      }
+      if (!sources.length && !hasSavedSources) {
+        const savedText = String(saved?.sourceText || "").trim();
+        const savedFileId = String(saved?.sourceFileId || "").trim();
+        const savedFileName = String(saved?.sourceFileName || "").trim();
+        if (savedText) {
+          setTextValue(savedText);
+          setInputMode("text");
+          setLastSource({ mode: "text", text: savedText });
+        } else if (savedFileId) {
+          setInputMode("file");
+          setStoredFileId(savedFileId);
+          setStoredFileName(savedFileName || "Uploaded file");
+          setLastSource({ mode: "file", fileId: savedFileId, label: savedFileName || "Uploaded file" });
         }
       }
       const restoredMcqs = Array.isArray(saved?.mcqs) ? saved.mcqs : [];
@@ -826,14 +872,11 @@ function UploadPage({ user }) {
     try {
       setMcqGenerating(true);
       const activeSource = getActiveSource();
-      const savedRaw = sessionStorage.getItem("educator_study_set");
       let difficulty = "medium";
-      if (savedRaw) {
-        try {
-          const saved = JSON.parse(savedRaw);
-          difficulty = String(saved?.difficultyByMode?.mcq || "medium");
-        } catch (_error) {}
-      }
+      try {
+        const saved = readStudySet();
+        difficulty = String(saved?.difficultyByMode?.mcq || "medium");
+      } catch (_error) {}
       const data = await generateWithTool({ tool: "mcq", source: activeSource, difficulty, count: 20 });
       const normalizeArray = (value) => {
         if (Array.isArray(value)) return value;
@@ -859,9 +902,10 @@ function UploadPage({ user }) {
         summary,
         mcqSetId: data?.mcqSetId || mcqSetId || "",
       });
-      sessionStorage.setItem("educator_study_set", JSON.stringify(payload));
+      writeStudySet(payload);
       setMcqPayload(payload);
       setMcqReady(true);
+      saveCurrentSession().catch((error) => console.warn("Auto-save failed", error));
       toast.success("MCQs generated. Click View to open.");
     } catch (error) {
       console.error(error);
@@ -879,15 +923,12 @@ function UploadPage({ user }) {
     try {
       setFlashGenerating(true);
       const activeSource = getActiveSource();
-      const savedRaw = sessionStorage.getItem("educator_study_set");
       let difficulty = "medium";
-      if (savedRaw) {
-        try {
-          const saved = JSON.parse(savedRaw);
-          difficulty = String(saved?.difficultyByMode?.flashcards || "medium");
-        } catch (_error) {}
-      }
-      const data = await generateWithTool({ tool: "flashcards", source: activeSource, difficulty, count: 20 });
+      try {
+        const saved = readStudySet();
+        difficulty = String(saved?.difficultyByMode?.flashcards || "medium");
+      } catch (_error) {}
+      const data = await generateWithTool({ tool: "flashcards", source: activeSource, difficulty, count: 20, includeImages: true });
       const normalizeArray = (value) => {
         if (Array.isArray(value)) return value;
         if (typeof value === "string") {
@@ -912,9 +953,10 @@ function UploadPage({ user }) {
         summary,
         mcqSetId,
       });
-      sessionStorage.setItem("educator_study_set", JSON.stringify(payload));
+      writeStudySet(payload);
       setFlashPayload(payload);
       setFlashReady(true);
+      saveCurrentSession().catch((error) => console.warn("Auto-save failed", error));
       toast.success("Flashcards generated. Click View to open.");
     } catch (error) {
       console.error(error);
@@ -936,15 +978,13 @@ function UploadPage({ user }) {
     try {
       setFillBlanksGenerating(true);
       const activeSource = getActiveSource();
-      const savedRaw = sessionStorage.getItem("educator_study_set");
       let difficulty = "medium";
-      if (savedRaw) {
-        try {
-          const saved = JSON.parse(savedRaw);
-          difficulty = String(saved?.difficultyByMode?.fill_blanks || "medium");
-        } catch (_error) {}
-      }
-      const data = await generateWithTool({ tool: "fill_blanks", source: activeSource, difficulty, count: 20 });
+      try {
+        const saved = readStudySet();
+        difficulty = String(saved?.difficultyByMode?.fill_blanks || "medium");
+      } catch (_error) {}
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      const data = await generateWithTool({ tool: "fill_blanks", source: activeSource, difficulty, count: 20, authToken: token });
       const items = Array.isArray(data?.fillBlanks) ? data.fillBlanks : [];
       if (items.length === 0) {
         throw new Error("Server returned no fill-in-the-blanks");
@@ -958,9 +998,10 @@ function UploadPage({ user }) {
         summary,
         mcqSetId,
       });
-      sessionStorage.setItem("educator_study_set", JSON.stringify(payload));
+      writeStudySet(payload);
       setFillBlanksPayload(payload);
       setFillBlanksReady(true);
+      saveCurrentSession().catch((error) => console.warn("Auto-save failed", error));
       toast.success("Fill-in-the-blanks generated. Click to open.");
     } catch (error) {
       console.error(error);
@@ -982,15 +1023,13 @@ function UploadPage({ user }) {
     try {
       setTrueFalseGenerating(true);
       const activeSource = getActiveSource();
-      const savedRaw = sessionStorage.getItem("educator_study_set");
       let difficulty = "medium";
-      if (savedRaw) {
-        try {
-          const saved = JSON.parse(savedRaw);
-          difficulty = String(saved?.difficultyByMode?.true_false || "medium");
-        } catch (_error) {}
-      }
-      const data = await generateWithTool({ tool: "true_false", source: activeSource, difficulty, count: 20 });
+      try {
+        const saved = readStudySet();
+        difficulty = String(saved?.difficultyByMode?.true_false || "medium");
+      } catch (_error) {}
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      const data = await generateWithTool({ tool: "true_false", source: activeSource, difficulty, count: 20, authToken: token });
       const items = Array.isArray(data?.trueFalse) ? data.trueFalse : [];
       if (items.length === 0) {
         throw new Error("Server returned no true/false questions");
@@ -1004,9 +1043,10 @@ function UploadPage({ user }) {
         summary,
         mcqSetId,
       });
-      sessionStorage.setItem("educator_study_set", JSON.stringify(payload));
+      writeStudySet(payload);
       setTrueFalsePayload(payload);
       setTrueFalseReady(true);
+      saveCurrentSession().catch((error) => console.warn("Auto-save failed", error));
       toast.success("True/False generated. Click to open.");
     } catch (error) {
       console.error(error);
@@ -1036,6 +1076,25 @@ function UploadPage({ user }) {
     navigate("/true-false", { state: trueFalsePayload });
   };
 
+  const handleUpgrade = (featureKey) => {
+    const required = requiredPlanForFeature(featureKey);
+    if (required === "free") return;
+    toast.info(`Upgrade to ${required} to unlock this feature.`);
+    navigate("/premium");
+  };
+
+  const handleFillBlanksCardClick = () => {
+    if (fillBlanksReady) return handleViewFillBlanks();
+    if (!premium.canUse("fill_blanks")) return handleUpgrade("fill_blanks");
+    return handleGenerateFillBlanks();
+  };
+
+  const handleTrueFalseCardClick = () => {
+    if (trueFalseReady) return handleViewTrueFalse();
+    if (!premium.canUse("true_false")) return handleUpgrade("true_false");
+    return handleGenerateTrueFalse();
+  };
+
   const handleViewSummary = () => {
     if (!hasSummary) return;
     const payload = buildStudySetPayload({
@@ -1046,7 +1105,8 @@ function UploadPage({ user }) {
       summary,
       mcqSetId,
     });
-    sessionStorage.setItem("educator_study_set", JSON.stringify(payload));
+    writeStudySet(payload);
+    saveCurrentSession().catch((error) => console.warn("Auto-save failed", error));
     navigate("/summary", { state: payload });
   };
 
@@ -1073,7 +1133,8 @@ function UploadPage({ user }) {
         summary: nextSummary,
         mcqSetId,
       });
-      sessionStorage.setItem("educator_study_set", JSON.stringify(payload));
+      writeStudySet(payload);
+      saveCurrentSession().catch((error) => console.warn("Auto-save failed", error));
       toast.success("Summary generated");
     } catch (error) {
       console.error(error);
@@ -1100,11 +1161,12 @@ function UploadPage({ user }) {
         setVoiceAnswerAudioUrl("");
         setListening(false);
         setLastSource(null);
-        sessionStorage.removeItem("educator_study_set");
+        clearStudySet();
+        try {
+          localStorage.removeItem(ACTIVE_HISTORY_ID_KEY);
+          localStorage.removeItem("educator_exam_mock");
+        } catch (_error) {}
         sessionStorage.removeItem("educator_exam_mock");
-        setExamMock(null);
-        setExamSyllabus("");
-        setExamPast("");
       }
       if (next.length > 0) {
         persistSourcesSnapshot(next);
@@ -1151,87 +1213,6 @@ function UploadPage({ user }) {
       return "";
     } finally {
       setAudioLoading(false);
-    }
-  };
-
-  const handleGenerateMockExam = async () => {
-    const activeSource = getActiveSource();
-    const syllabusText = examSyllabus.trim() || textValue.trim();
-    const hasSyllabusFile = !!examSyllabusFile;
-    const hasPastFile = !!examPastFile;
-    if (!syllabusText && !hasSyllabusFile && !activeSource) {
-      toast.info("Add a syllabus (text or file) or upload a source to generate the mock exam");
-      return;
-    }
-    try {
-      setExamGenerating(true);
-      let response;
-      if (syllabusText && !hasSyllabusFile && !hasPastFile) {
-        response = await fetch(`${API_BASE}/api/exam/mock`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            syllabus: syllabusText,
-            pastPapers: examPast.trim(),
-            totalQuestions: Number(examQuestions) || 20,
-            durationMinutes: Number(examDuration) || 60,
-          }),
-        });
-      } else {
-        const formData = new FormData();
-        formData.append("pastPapers", examPast.trim());
-        formData.append("totalQuestions", Number(examQuestions) || 20);
-        formData.append("durationMinutes", Number(examDuration) || 60);
-        if (hasSyllabusFile) {
-          formData.append("file", examSyllabusFile);
-          formData.append("mode", "file");
-        } else if (syllabusText) {
-          formData.append("syllabus", syllabusText);
-        } else if (activeSource?.mode === "file" && activeSource.fileId) {
-          formData.append("fileId", activeSource.fileId);
-          formData.append("mode", "file");
-        } else if (activeSource?.mode === "file" && activeSource.file instanceof File) {
-          formData.append("file", activeSource.file);
-          formData.append("mode", "file");
-        } else if (activeSource?.mode === "text" && activeSource.text) {
-          formData.append("text", activeSource.text);
-          formData.append("mode", "text");
-        }
-        if (hasPastFile) {
-          formData.append("pastFile", examPastFile);
-        }
-        if (activeSource?.mode === "file" && activeSource.fileId) {
-          formData.append("fileId", activeSource.fileId);
-          formData.append("mode", "file");
-        } else if (activeSource?.mode === "file" && activeSource.file instanceof File) {
-          formData.append("file", activeSource.file);
-          formData.append("mode", "file");
-        } else if (activeSource?.mode === "text" && activeSource.text) {
-          formData.append("text", activeSource.text);
-          formData.append("mode", "text");
-        }
-        response = await fetch(`${API_BASE}/api/exam/mock`, { method: "POST", body: formData });
-      }
-      const raw = await response.text();
-      let data = null;
-      try {
-        data = raw ? JSON.parse(raw) : null;
-      } catch (_err) {
-        data = null;
-      }
-      if (!response.ok) {
-        throw new Error(data?.error || raw || "Failed to generate mock exam");
-      }
-      const nextMock = data?.mockExam;
-      setExamMock(nextMock);
-      sessionStorage.setItem("educator_exam_mock", JSON.stringify(nextMock || {}));
-      toast.success("Mock exam ready");
-      navigate("/exam-mock", { state: { mockExam: nextMock } });
-    } catch (error) {
-      console.error(error);
-      toast.error(getReadableErrorMessage(error, "Failed to generate mock exam"));
-    } finally {
-      setExamGenerating(false);
     }
   };
 
@@ -1474,8 +1455,10 @@ function UploadPage({ user }) {
                 </button>
                 <button
                   type="button"
-                  className={`tool-action-card ${fillBlanksReady ? "tool-action-ready" : ""}`}
-                  onClick={fillBlanksReady ? handleViewFillBlanks : handleGenerateFillBlanks}
+                  className={`tool-action-card ${fillBlanksReady ? "tool-action-ready" : ""} ${
+                    !premium.canUse("fill_blanks") ? "tool-action-locked" : ""
+                  }`}
+                  onClick={handleFillBlanksCardClick}
                   disabled={
                     fillBlanksReady
                       ? !fillBlanksPayload
@@ -1488,6 +1471,11 @@ function UploadPage({ user }) {
                         summaryGenerating
                   }
                 >
+                  {!premium.canUse("fill_blanks") && (
+                    <span className="tool-premium-ribbon" aria-hidden="true">
+                      <CrownIcon className="tool-premium-crown" />
+                    </span>
+                  )}
                   <span className="tool-action-title">
                     {fillBlanksReady
                       ? "Fill Blanks Ready"
@@ -1496,7 +1484,11 @@ function UploadPage({ user }) {
                       : "Fill in the Blanks"}
                   </span>
                   <span className="tool-action-subtitle">
-                    {fillBlanksReady ? "Click to open your blanks" : "Practice key facts quickly"}
+                    {fillBlanksReady
+                      ? "Click to open your blanks"
+                      : !premium.canUse("fill_blanks")
+                      ? `Premium (${requiredPlanForFeature("fill_blanks")}+)`
+                      : "Practice key facts quickly"}
                   </span>
                   {!fillBlanksReady && fillBlanksGenerating && (
                     <span className="tool-action-spinner" aria-hidden="true" />
@@ -1504,8 +1496,10 @@ function UploadPage({ user }) {
                 </button>
                 <button
                   type="button"
-                  className={`tool-action-card ${trueFalseReady ? "tool-action-ready" : ""}`}
-                  onClick={trueFalseReady ? handleViewTrueFalse : handleGenerateTrueFalse}
+                  className={`tool-action-card ${trueFalseReady ? "tool-action-ready" : ""} ${
+                    !premium.canUse("true_false") ? "tool-action-locked" : ""
+                  }`}
+                  onClick={handleTrueFalseCardClick}
                   disabled={
                     trueFalseReady
                       ? !trueFalsePayload
@@ -1518,6 +1512,11 @@ function UploadPage({ user }) {
                         summaryGenerating
                   }
                 >
+                  {!premium.canUse("true_false") && (
+                    <span className="tool-premium-ribbon" aria-hidden="true">
+                      <CrownIcon className="tool-premium-crown" />
+                    </span>
+                  )}
                   <span className="tool-action-title">
                     {trueFalseReady
                       ? "True / False Ready"
@@ -1526,7 +1525,11 @@ function UploadPage({ user }) {
                       : "True and False"}
                   </span>
                   <span className="tool-action-subtitle">
-                    {trueFalseReady ? "Click to open your true/false questions" : "Fast check: true or false"}
+                    {trueFalseReady
+                      ? "Click to open your true/false questions"
+                      : !premium.canUse("true_false")
+                      ? `Premium (${requiredPlanForFeature("true_false")}+)`
+                      : "Fast check: true or false"}
                   </span>
                   {!trueFalseReady && trueFalseGenerating && (
                     <span className="tool-action-spinner" aria-hidden="true" />
@@ -1553,21 +1556,24 @@ function UploadPage({ user }) {
                   </span>
                   {summaryGenerating && <span className="tool-action-spinner" aria-hidden="true" />}
                 </button>
-              </div>
-              <div className="mock-exam-panel">
-                <div className="mock-exam-header">
-                  <div>
-                    <h3>Exam Blueprint / Mock Test</h3>
-                    <p>Paste syllabus and (optionally) past papers. We will bias questions per section and timebox.</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="primary-action-btn"
-                    onClick={() => setExamModalOpen(true)}
-                  >
-                    Open
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className={`tool-action-card ${!premium.canUse("youtube_guide") ? "tool-action-locked" : ""}`}
+                  onClick={handleOpenYoutubeGuidePage}
+                  disabled={!hasSource}
+                >
+                  {!premium.canUse("youtube_guide") && (
+                    <span className="tool-premium-ribbon" aria-hidden="true">
+                      <CrownIcon className="tool-premium-crown" />
+                    </span>
+                  )}
+                  <span className="tool-action-title">YouTube Guide</span>
+                  <span className="tool-action-subtitle">
+                    {!premium.canUse("youtube_guide")
+                      ? `Premium (${requiredPlanForFeature("youtube_guide")}+)`
+                      : "Open video recommendations page"}
+                  </span>
+                </button>
               </div>
             </div>
           </section>
@@ -1577,15 +1583,7 @@ function UploadPage({ user }) {
           <div className="workspace-primary-actions">
             <button
               type="button"
-              className="save-session-btn primary-action-btn"
-              onClick={handleSaveSessionOnly}
-              disabled={savingSession || !hasSource}
-            >
-              {savingSession ? "Saving..." : "Save Session"}
-            </button>
-            <button
-              type="button"
-              className="save-session-btn primary-action-btn"
+              className="primary-action-btn"
               onClick={handleGenerateOtherSource}
             >
               Generate New Source Content
@@ -1633,93 +1631,6 @@ function UploadPage({ user }) {
         </div>
       )}
 
-      {examModalOpen && (
-        <div className="modal-overlay" role="presentation" onClick={() => setExamModalOpen(false)}>
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="exam-modal-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button type="button" className="modal-close" onClick={() => setExamModalOpen(false)} aria-label="Close">
-              x
-            </button>
-            <header className="modal-header">
-              <h2 id="exam-modal-title">Exam Blueprint / Mock Test</h2>
-              <p>Upload syllabus and past papers, or paste text. We will generate a timed mock exam.</p>
-            </header>
-            <div className="modal-body exam-modal-body">
-              <div className="field">
-                <span>Syllabus text</span>
-                <textarea
-                  value={examSyllabus}
-                  onChange={(e) => setExamSyllabus(e.target.value)}
-                  placeholder="Paste syllabus bullets or learning objectives..."
-                  rows={4}
-                />
-              </div>
-              <div className="field">
-                <span>Syllabus file (pdf/docx/pptx/txt)</span>
-                <input
-                  type="file"
-                  accept=".pdf,.docx,.pptx,.txt"
-                  onChange={(e) => setExamSyllabusFile(e.target.files?.[0] || null)}
-                />
-                {examSyllabusFile && <p className="file-hint">Using: {examSyllabusFile.name}</p>}
-              </div>
-              <div className="field">
-                <span>Past papers text (optional)</span>
-                <textarea
-                  value={examPast}
-                  onChange={(e) => setExamPast(e.target.value)}
-                  placeholder="Paste question stems or previous papers..."
-                  rows={3}
-                />
-              </div>
-              <div className="field">
-                <span>Past papers file (optional)</span>
-                <input
-                  type="file"
-                  accept=".pdf,.docx,.pptx,.txt"
-                  onChange={(e) => setExamPastFile(e.target.files?.[0] || null)}
-                />
-                {examPastFile && <p className="file-hint">Using: {examPastFile.name}</p>}
-              </div>
-              <div className="mock-exam-controls">
-                <label>
-                  Total questions
-                  <input
-                    type="number"
-                    min="5"
-                    max="80"
-                    value={examQuestions}
-                    onChange={(e) => setExamQuestions(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Duration (minutes)
-                  <input
-                    type="number"
-                    min="20"
-                    max="240"
-                    value={examDuration}
-                    onChange={(e) => setExamDuration(e.target.value)}
-                  />
-                </label>
-              </div>
-            </div>
-            <div className="modal-actions">
-              <button type="button" className="ghost-btn" onClick={() => setExamModalOpen(false)}>
-                Cancel
-              </button>
-              <button type="button" onClick={() => { setExamModalOpen(false); handleGenerateMockExam(); }} disabled={examGenerating}>
-                {examGenerating ? "Generating..." : "Generate Mock Exam"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 }

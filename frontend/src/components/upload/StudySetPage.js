@@ -11,10 +11,12 @@ import KnowledgeGapSection from "./KnowledgeGapSection";
 import DifficultySelect, { normalizeDifficulty } from "./DifficultySelect";
 import SpacedPlanSection from "./SpacedPlanSection";
 import VoiceTutorSection from "./VoiceTutorSection";
+import usePremium from "../../premium/usePremium";
 
 function StudySetPage({ mode }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const premium = usePremium();
   const ttsLanguages = [
     { value: "en", label: "English" },
     { value: "hi", label: "Hindi" },
@@ -25,7 +27,13 @@ function StudySetPage({ mode }) {
     { value: "pt", label: "Portuguese" },
     { value: "ja", label: "Japanese" },
   ];
-  const savedStateRaw = sessionStorage.getItem("educator_study_set");
+  const savedStateRaw = (() => {
+    try {
+      return localStorage.getItem("educator_study_set") || sessionStorage.getItem("educator_study_set");
+    } catch (_error) {
+      return sessionStorage.getItem("educator_study_set");
+    }
+  })();
   let savedState = null;
   if (savedStateRaw) {
     try {
@@ -82,6 +90,8 @@ function StudySetPage({ mode }) {
   const [revisionData, setRevisionData] = useState(null);
   const [revisionLoading, setRevisionLoading] = useState(false);
   const [voiceTutorOpen, setVoiceTutorOpen] = useState(false);
+
+  const handleUpgrade = () => navigate("/premium");
 
   const filteredMcqPairs = useMemo(() => mcqs.map((item, index) => ({ item, index })), [mcqs]);
   const filteredFlashcards = useMemo(() => flashcards, [flashcards]);
@@ -258,7 +268,13 @@ function StudySetPage({ mode }) {
   }, [flashAccuracy, flashKnownCount, flashTotalCount]);
 
   const updateSessionStorage = (partial) => {
-    const savedRaw = sessionStorage.getItem("educator_study_set");
+    const savedRaw = (() => {
+      try {
+        return localStorage.getItem("educator_study_set") || sessionStorage.getItem("educator_study_set") || "";
+      } catch (_error) {
+        return sessionStorage.getItem("educator_study_set") || "";
+      }
+    })();
     let saved = {};
     if (savedRaw) {
       try {
@@ -268,6 +284,9 @@ function StudySetPage({ mode }) {
       }
     }
     const next = { ...saved, ...partial };
+    try {
+      localStorage.setItem("educator_study_set", JSON.stringify(next));
+    } catch (_error) {}
     sessionStorage.setItem("educator_study_set", JSON.stringify(next));
   };
 
@@ -527,9 +546,10 @@ function StudySetPage({ mode }) {
     }
     try {
       setAudioLoading(true);
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
       const response = await fetch(`${API_BASE}/api/tts`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ text: summary, language: ttsLanguage, translate: true }),
       });
       if (!response.ok) {
@@ -580,9 +600,10 @@ function StudySetPage({ mode }) {
         selectedAnswers[key] = payload.attempts[key];
       });
 
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
       const response = await fetch(`${API_BASE}/api/recommend/knowledge-gaps/content`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
           threshold: 0.6,
           language: ttsLanguage,
@@ -730,6 +751,8 @@ function StudySetPage({ mode }) {
         ttsLanguages={ttsLanguages}
         topics={topics}
         topicsLoading={topicsLoading}
+        audioLocked={!premium.canUse("audio_summary")}
+        onUpgrade={handleUpgrade}
       />
     )}
 
@@ -751,7 +774,13 @@ function StudySetPage({ mode }) {
           }}
         />
 
-        <KnowledgeGapSection result={knowledgeGapResult} loading={knowledgeGapLoading} onAnalyze={handleAnalyzeKnowledgeGaps} />
+        <KnowledgeGapSection
+          result={knowledgeGapResult}
+          loading={knowledgeGapLoading}
+          onAnalyze={handleAnalyzeKnowledgeGaps}
+          locked={!premium.canUse("knowledge_gap")}
+          onUpgrade={handleUpgrade}
+        />
 
         {revisionData && (
           <section className="result-section">

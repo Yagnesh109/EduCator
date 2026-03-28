@@ -1,7 +1,7 @@
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse
 
 from services.mcq_session import get_mcq_session
@@ -469,8 +469,12 @@ def _concept_explanations_from_mistakes(mode, items, mistakes, max_topics=4):
 
 
 @router.post("/api/recommend/knowledge-gaps/content")
-def recommend_knowledge_gaps_from_content(payload: dict = Body(default=None)):
+def recommend_knowledge_gaps_from_content(request: Request, payload: dict = Body(default=None)):
     try:
+        from utils.premium_guard import require_feature
+
+        require_feature(request, "knowledge_gap")
+
         payload = payload or {}
         mode = _normalize_mode(payload.get("mode"))
         items = payload.get("items", []) or []
@@ -532,8 +536,12 @@ def recommend_knowledge_gaps_from_content(payload: dict = Body(default=None)):
 
 
 @router.post("/api/recommend/knowledge-gaps")
-def recommend_knowledge_gaps(payload: dict = Body(default=None)):
+def recommend_knowledge_gaps(request: Request, payload: dict = Body(default=None)):
     try:
+        from utils.premium_guard import require_feature
+
+        require_feature(request, "knowledge_gap")
+
         payload = payload or {}
         mcq_set_id = str(payload.get("mcqSetId", "")).strip()
         selected_answers = payload.get("selectedAnswers", {}) or {}

@@ -17,9 +17,36 @@ backend/venv/
 # Environment & secrets
 **/.env
 **/.env.*
-backend/*.json
+!**/.env.example
+!**/.env.sample
+!**/.env.template
+
+# Firebase / service accounts
+**/*firebase-adminsdk*.json
+**/serviceAccount*.json
+**/service-account*.json
 backend/serviceAccountKey.json
-backend/*firebase-adminsdk*.json
+
+# Keys / certs
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.crt
+**/*.cer
+**/*.der
+**/*.jks
+**/*.keystore
+
+# Local databases
+**/*.sqlite
+**/*.sqlite3
+**/*.db
+
+# Stripe CLI local files (if created in repo)
+.stripe/
+stripe.toml
+stripe.exe
 backend/temp_uploads/
 backend/temp_uploads/**
 

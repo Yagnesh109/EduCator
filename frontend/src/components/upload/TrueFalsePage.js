@@ -2,15 +2,25 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { API_BASE } from "../../config/api";
+import { auth } from "../../firebase";
 import DifficultySelect, { normalizeDifficulty } from "./DifficultySelect";
 import ExportSection from "./ExportSection";
 import KnowledgeGapSection from "./KnowledgeGapSection";
 import TrueFalseSection from "./TrueFalseSection";
+import usePremium from "../../premium/usePremium";
+import UpgradeNotice from "../premium/UpgradeNotice";
 
 function TrueFalsePage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const savedStateRaw = sessionStorage.getItem("educator_study_set");
+  const premium = usePremium();
+  const savedStateRaw = (() => {
+    try {
+      return localStorage.getItem("educator_study_set") || sessionStorage.getItem("educator_study_set");
+    } catch (_error) {
+      return sessionStorage.getItem("educator_study_set");
+    }
+  })();
   let savedState = null;
   if (savedStateRaw) {
     try {
@@ -32,8 +42,33 @@ function TrueFalsePage() {
     routeState?.difficultyByMode && typeof routeState.difficultyByMode === "object" ? routeState.difficultyByMode : {};
   const [difficulty, setDifficulty] = useState(normalizeDifficulty(difficultySaved.true_false || "medium"));
 
+  if (!premium.canUse("true_false")) {
+    return (
+      <main className="upload-page">
+        <section className="upload-card upload-layout notebook-shell">
+          <header className="upload-header">
+            <h1>True / False</h1>
+            <p>This is a Premium feature.</p>
+          </header>
+          <UpgradeNotice title="True / False" message="Upgrade to Gold (or higher) to unlock this feature." />
+          <div style={{ textAlign: "center", marginTop: "1rem" }}>
+            <button type="button" onClick={() => navigate("/uplod")}>
+              Back
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   const updateSessionStorage = (partial) => {
-    const savedRaw = sessionStorage.getItem("educator_study_set");
+    const savedRaw = (() => {
+      try {
+        return localStorage.getItem("educator_study_set") || sessionStorage.getItem("educator_study_set") || "";
+      } catch (_error) {
+        return sessionStorage.getItem("educator_study_set") || "";
+      }
+    })();
     let saved = {};
     if (savedRaw) {
       try {
@@ -43,6 +78,9 @@ function TrueFalsePage() {
       }
     }
     const next = { ...saved, ...partial };
+    try {
+      localStorage.setItem("educator_study_set", JSON.stringify(next));
+    } catch (_error) {}
     sessionStorage.setItem("educator_study_set", JSON.stringify(next));
   };
 
@@ -89,7 +127,12 @@ function TrueFalsePage() {
     try {
       formData.append("tool", "true_false");
       formData.append("count", "20");
-      const response = await fetch(`${API_BASE}/api/tools/generate`, { method: "POST", body: formData });
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+      const response = await fetch(`${API_BASE}/api/tools/generate`, {
+        method: "POST",
+        body: formData,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(data?.error || "Failed to regenerate true/false");
@@ -161,9 +204,10 @@ function TrueFalsePage() {
   const handleAnalyzeKnowledgeGaps = async () => {
     try {
       setKnowledgeGapLoading(true);
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
       const response = await fetch(`${API_BASE}/api/recommend/knowledge-gaps/content`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
           mode: "true_false",
           items: trueFalse,
@@ -231,7 +275,13 @@ function TrueFalsePage() {
           mode="true_false"
         />
         <TrueFalseSection items={trueFalse} answers={answers} onAnswer={(index, value) => setAnswers((prev) => ({ ...prev, [index]: value }))} />
-        <KnowledgeGapSection result={knowledgeGapResult} loading={knowledgeGapLoading} onAnalyze={handleAnalyzeKnowledgeGaps} />
+        <KnowledgeGapSection
+          result={knowledgeGapResult}
+          loading={knowledgeGapLoading}
+          onAnalyze={handleAnalyzeKnowledgeGaps}
+          locked={!premium.canUse("knowledge_gap")}
+          onUpgrade={() => navigate("/premium")}
+        />
         <div className="other-source-wrap dual-actions" style={{ marginTop: "0.9rem" }}>
           <button type="button" className="ghost-btn" onClick={() => navigate("/uplod")}>
             Back to Upload

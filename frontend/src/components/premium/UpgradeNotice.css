@@ -1,0 +1,29 @@
+.upgrade-notice {
+  border: 1px dashed rgba(17, 36, 60, 0.22);
+  border-radius: 16px;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(31, 93, 143, 0.08), rgba(255, 200, 88, 0.12));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.upgrade-notice-title {
+  font-weight: 950;
+  color: #10263c;
+}
+
+.upgrade-notice-sub {
+  margin-top: 0.2rem;
+  font-weight: 800;
+  color: #4b647d;
+}
+
+.upgrade-notice-cta {
+  border-radius: 14px;
+  padding: 0.65rem 0.9rem;
+  font-weight: 900;
+}
+

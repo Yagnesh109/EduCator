@@ -80,6 +80,22 @@ function HistoryPage() {
     }
   };
 
+  const handleContinueHistoryItem = (item) => {
+    try {
+      localStorage.setItem("educator_active_history_id", String(item?.id || ""));
+      localStorage.setItem("educator_study_set", JSON.stringify(item || {}));
+    } catch (_error) {
+      // ignore
+    }
+    try {
+      sessionStorage.setItem("educator_study_set", JSON.stringify(item || {}));
+    } catch (_error) {
+      // ignore
+    }
+    toast.success("Workspace restored");
+    navigate("/uplod");
+  };
+
   return (
     <main className="upload-page">
       <div className="home-bots" aria-hidden="true">
@@ -110,6 +126,7 @@ function HistoryPage() {
                 onClearHistory={handleClearHistory}
                 onToggleDetails={toggleHistoryDetails}
                 onDeleteItem={handleDeleteHistoryItem}
+                onContinue={handleContinueHistoryItem}
               />
             </div>
           </section>

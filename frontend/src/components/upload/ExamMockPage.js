@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import "./ExamMockPage.css";
+import usePremium from "../../premium/usePremium";
+import UpgradeNotice from "../premium/UpgradeNotice";
 
 function ExamMockPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const premium = usePremium();
   const [mock, setMock] = useState(null);
 
   const [answers, setAnswers] = useState({});
@@ -99,6 +102,23 @@ function ExamMockPage() {
     );
   }
 
+  if (!premium.canUse("mock_exam")) {
+    return (
+      <main className="exam-mock-page">
+        <div className="exam-card">
+          <h1>Mock Exam</h1>
+          <p>This is a Premium feature.</p>
+          <UpgradeNotice title="Mock Exam" message="Upgrade to Platinum to unlock mock exams." />
+          <div style={{ textAlign: "center", marginTop: "1rem" }}>
+            <button type="button" className="ghost-btn" onClick={() => navigate("/uplod")}>
+              Back
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="exam-mock-page">
       <div className="exam-card">
@@ -110,32 +130,23 @@ function ExamMockPage() {
               {formatTime(timeLeft)}
             </span>
           </div>
-          <div className="exam-header-actions" style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <div className="exam-header-actions">
             {submitted ? (
               <span className="score-display">
                 Score: {score} / {totalQuestions}
               </span>
             ) : (
-              <button
-                type="button"
-                className="accent-button"
-                style={{ background: "#2563eb", color: "#fff", border: "none", padding: "8px 16px", borderRadius: "8px", cursor: "pointer", fontWeight: "600" }}
-                onClick={handleSubmit}
-              >
+              <button type="button" className="primary-action-btn exam-submit-btn" onClick={handleSubmit}>
                 Submit Exam
               </button>
             )}
-            <button
-              type="button"
-              style={{ background: "#e2e8f0", color: "#0f172a", border: "none", padding: "8px 16px", borderRadius: "8px", cursor: "pointer", fontWeight: "600" }}
-              onClick={() => navigate("/uplod")}
-            >
+            <button type="button" className="ghost-btn exam-exit-btn" onClick={() => navigate("/uplod")}>
               Exit
             </button>
           </div>
         </div>
 
-        <header className="exam-header" style={{ borderBottom: "none", paddingBottom: "0" }}>
+        <header className="exam-header exam-header-clean">
           <div>
             <p className="eyebrow">Mock Exam</p>
             <h1>Sectioned practice based on your syllabus</h1>
@@ -152,8 +163,7 @@ function ExamMockPage() {
               <li key={section.name}>
                 <div className="section-name">{section.name}</div>
                 <div className="section-meta">
-                  {section.plannedQuestions} qs • weight {section.weight ?? 0} •
-                  {" "}{(section.focusTopics || []).join(", ") || "General"}
+                  {section.plannedQuestions} qs • weight {section.weight ?? 0} • {(section.focusTopics || []).join(", ") || "General"}
                 </div>
               </li>
             ))}
@@ -190,11 +200,11 @@ function ExamMockPage() {
                   })}
                 </ul>
                 {submitted && (
-                  <div className="explanation-box" style={{ marginTop: "12px", padding: "12px", borderRadius: "8px", background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-                    <p className="explanation" style={{ margin: 0, color: "#334155", fontSize: "14px" }}>
-                      <strong style={{ color: "#0f172a" }}>Real Answer:</strong> {q.answer}
+                  <div className="exam-explanation-box">
+                    <p className="exam-explanation">
+                      <strong>Real Answer:</strong> {q.answer}
                       <br />
-                      <strong style={{ color: "#0f172a", marginTop: "4px", display: "inline-block" }}>Explanation:</strong> {q.explanation}
+                      <strong>Explanation:</strong> {q.explanation}
                     </p>
                   </div>
                 )}

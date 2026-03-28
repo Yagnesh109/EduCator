@@ -15,18 +15,19 @@ import SummaryPage from "./components/upload/SummaryPage";
 import FillBlanksPage from "./components/upload/FillBlanksPage";
 import TrueFalsePage from "./components/upload/TrueFalsePage";
 import ExamMockPage from "./components/upload/ExamMockPage";
+import MockTestPage from "./components/mock/MockTestPage";
+import YouTubeGuidePage from "./components/youtube/YouTubeGuidePage";
+import PremiumPage from "./components/premium/PremiumPage";
+import usePremium from "./premium/usePremium";
+import { requiredPlanForFeature } from "./premium/plans";
+import CrownIcon from "./components/premium/CrownIcon";
 
 function App() {
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-
-  useEffect(() => {
-    if (location.pathname === "/") {
-      sessionStorage.removeItem("educator_study_set");
-    }
-  }, [location.pathname]);
+  const premium = usePremium();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -47,9 +48,28 @@ function App() {
     navigate("/uplod");
   };
 
+  const openMockTest = () => {
+    if (!user) {
+      toast.info("Login first");
+      navigate("/login", { state: { from: "/mock-test" } });
+      return;
+    }
+    if (!premium.canUse("mock_exam")) {
+      toast.info(`Upgrade to ${requiredPlanForFeature("mock_exam")} to unlock Mock Exam.`);
+      navigate("/premium");
+      return;
+    }
+    navigate("/mock-test");
+  };
+
   const handleUploadNavClick = (event) => {
     event.preventDefault();
     openUpload();
+  };
+
+  const handleMockTestNavClick = (event) => {
+    event.preventDefault();
+    openMockTest();
   };
 
   const handleLogout = async () => {
@@ -94,6 +114,11 @@ function App() {
           <Link to="/">Home</Link>
           <a href="/uplod" onClick={handleUploadNavClick}>
             Upload
+          </a>
+          <Link to="/premium">Premium</Link>
+          <a href="/mock-test" onClick={handleMockTestNavClick}>
+            Mock Test{" "}
+            {!premium.canUse("mock_exam") && <CrownIcon className="nav-premium-crown" />}
           </a>
           {!user && (
             <Link className="auth-btn" to="/login">
@@ -142,6 +167,30 @@ function App() {
           element={
             <ProtectedRoute user={user}>
               <UploadPage user={user} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/mock-test"
+          element={
+            <ProtectedRoute user={user}>
+              <MockTestPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/premium"
+          element={
+            <ProtectedRoute user={user}>
+              <PremiumPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/youtube-guide"
+          element={
+            <ProtectedRoute user={user}>
+              <YouTubeGuidePage />
             </ProtectedRoute>
           }
         />

@@ -1,0 +1,16 @@
+Next Week Plan: Smart Study Assistant
+
+Step 1: Integrate Educational Content APIs
+We will connect the app to the YouTube Education API to automatically pull relevant video tutorials matching the user's uploaded topics. This will provide instant, supplementary video lessons whenever a student struggles with a concept.
+
+Step 2: Add SQLite Database for Personal Tracking
+We will set up a local SQLite database to securely store the user's study sessions, quiz scores, and learning history. This ensures their progress is perfectly tracked and saved locally over time.
+
+Step 3: Create Subject-wise Quiz Categorization
+We will update the user interface and database schema to group generated quizzes and flashcards by specific subjects, such as Math, Science, or History. This will make it much easier for students to organize their study materials.
+
+Step 4: Implement Basic Study Schedule Recommendations
+We will build a recommendation engine that analyzes the user's upcoming test dates and past performance to auto-generate a suggested daily study plan. It will tell them exactly what subjects they need to focus on each day.
+
+Step 5: Add Simple Performance Analytics and Progress Charts
+We will integrate charting libraries to visually display the user's quiz scores and study consistency over time. This will give students a clear, visual dashboard showing their improvement and highlighting exactly where they need more practice.

@@ -58,8 +58,13 @@ def serialize_history_doc(doc_id, doc):
         "id": str(doc_id),
         "kind": doc.get("kind", ""),
         "sourceType": doc.get("sourceType", ""),
+        "sources": doc.get("sources", []),
         "sourceText": doc.get("sourceText", ""),
+        "sourceFileId": doc.get("sourceFileId", ""),
+        "sourceFileName": doc.get("sourceFileName", ""),
         "sourcePreview": doc.get("sourcePreview", ""),
+        "difficultyByMode": doc.get("difficultyByMode", {}),
+        "mcqSetId": doc.get("mcqSetId", ""),
         "pdfFileName": doc.get("pdfFileName", ""),
         "pdfSizeBytes": doc.get("pdfSizeBytes", 0),
         "pptFileName": doc.get("pptFileName", ""),
@@ -78,6 +83,8 @@ def serialize_history_doc(doc_id, doc):
         "summary": doc.get("summary", ""),
         "createdAt": doc.get("createdAt", ""),
         "createdAtEpoch": doc.get("createdAtEpoch", 0),
+        "updatedAt": doc.get("updatedAt", ""),
+        "updatedAtEpoch": doc.get("updatedAtEpoch", 0),
     }
 
 
@@ -108,8 +115,16 @@ def list_history(limit=20):
 
 
 def save_session_history(payload):
+    session_id = str(payload.get("sessionId", "")).strip()
     source_type = str(payload.get("sourceType", "")).strip()
     source_preview = str(payload.get("sourcePreview", "")).strip()
+    kind = str(payload.get("kind", "workspace")).strip() or "workspace"
+    sources = payload.get("sources", [])
+    source_text = str(payload.get("sourceText", "")).strip()
+    source_file_id = str(payload.get("sourceFileId", "")).strip()
+    source_file_name = str(payload.get("sourceFileName", "")).strip()
+    difficulty_by_mode = payload.get("difficultyByMode", {})
+    mcq_set_id = str(payload.get("mcqSetId", "")).strip()
     had_mcqs = bool(payload.get("hadMcqs", False))
     had_flashcards = bool(payload.get("hadFlashcards", False))
     had_fill_blanks = bool(payload.get("hadFillBlanks", False))
@@ -122,9 +137,19 @@ def save_session_history(payload):
     true_false = payload.get("trueFalse", [])
     summary = str(payload.get("summary", "")).strip()
 
+    now_iso = datetime.now(timezone.utc).isoformat()
+    now_epoch = int(time.time())
+
     session_doc = {
+        "kind": kind,
         "sourceType": source_type,
         "sourcePreview": source_preview[:500],
+        "sources": sources if isinstance(sources, list) else [],
+        "sourceText": source_text[:20000],
+        "sourceFileId": source_file_id[:200],
+        "sourceFileName": source_file_name[:300],
+        "difficultyByMode": difficulty_by_mode if isinstance(difficulty_by_mode, dict) else {},
+        "mcqSetId": mcq_set_id[:200],
         "hadMcqs": had_mcqs,
         "hadFlashcards": had_flashcards,
         "hadFillBlanks": had_fill_blanks,
@@ -136,11 +161,24 @@ def save_session_history(payload):
         "fillBlanks": fill_blanks if isinstance(fill_blanks, list) else [],
         "trueFalse": true_false if isinstance(true_false, list) else [],
         "summary": summary[:4000],
-        "createdAt": datetime.now(timezone.utc).isoformat(),
-        "createdAtEpoch": int(time.time()),
+        "createdAt": now_iso,
+        "createdAtEpoch": now_epoch,
+        "updatedAt": now_iso,
+        "updatedAtEpoch": now_epoch,
     }
-    session_id = save_completed_session(session_doc)
-    return session_id
+    db = get_firestore_db()
+    if db is None:
+        return None
+
+    try:
+        if session_id:
+            ref = db.collection(FIREBASE_SESSION_COLLECTION).document(session_id)
+            ref.set(session_doc)
+            return session_id
+    except Exception:
+        return None
+
+    return save_completed_session(session_doc)
 
 
 def clear_history():

@@ -22,6 +22,24 @@
   padding-bottom: 16px;
 }
 
+.exam-header.exam-header-clean {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.exam-header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.exam-submit-btn,
+.exam-exit-btn {
+  padding: 8px 16px;
+  border-radius: 12px;
+}
+
 .exam-header .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -225,4 +243,22 @@
   padding: 6px 14px;
   border-radius: 8px;
   border: 1px solid #bbf7d0;
+}
+
+.exam-explanation-box {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.exam-explanation {
+  margin: 0;
+  color: #334155;
+  font-size: 14px;
+}
+
+.exam-explanation strong {
+  color: #0f172a;
 }

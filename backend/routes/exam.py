@@ -60,6 +60,10 @@ async def create_mock_exam(request: Request):
     - totalQuestions, durationMinutes
     """
     try:
+        from utils.premium_guard import require_feature
+
+        require_feature(request, "mock_exam")
+
         syllabus = ""
         past_papers = ""
         sections = None

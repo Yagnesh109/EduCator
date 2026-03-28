@@ -16,8 +16,23 @@ from services.gemini_service import (
     generate_summary_from_source,
     generate_study_set_from_source,
 )
+from services.pexels_service import PEXELS_API_KEY, search_photo
+from utils.premium_guard import require_feature
 
 router = APIRouter()
+
+def _build_image_query(item: dict) -> str:
+    topic = str(item.get("topic") or "").strip()
+    front = str(item.get("front") or "").strip()
+    query = topic or front
+    query = " ".join(query.replace("\n", " ").split())
+    return query[:140]
+
+
+def _build_image_fallback_query(item: dict) -> str:
+    front = str(item.get("front") or "").strip()
+    query = " ".join(front.replace("\n", " ").split())
+    return query[:140]
 
 
 def _normalize_tool(value: str) -> str:
@@ -53,6 +68,11 @@ def _normalize_count(value, default=10, max_count=50) -> int:
     return count
 
 
+def _to_bool(value) -> bool:
+    raw = str(value or "").strip().lower()
+    return raw in {"1", "true", "yes", "y", "on"}
+
+
 @router.post("/api/tools/generate")
 async def tool_generate(request: Request):
     try:
@@ -67,6 +87,12 @@ async def tool_generate(request: Request):
             )
 
         count = _normalize_count(form.get("count"), default=20, max_count=80)
+        include_images = _to_bool(form.get("includeImages"))
+
+        if tool == "fill_blanks":
+            require_feature(request, "fill_blanks")
+        if tool == "true_false":
+            require_feature(request, "true_false")
 
         source_text, source_meta = await get_source_text_from_request(request)
         difficulty = str(source_meta.get("difficulty", "medium")).strip().lower() or "medium"
@@ -130,6 +156,41 @@ async def tool_generate(request: Request):
                     "Each item must be: {\"front\":\"...\",\"back\":\"...\",\"topic\":\"...\"}."
                 )
                 flashcards = generate_items_from_source(source_text, instruction, expected_count=count)
+
+            if include_images and PEXELS_API_KEY and isinstance(flashcards, list) and len(flashcards) > 0:
+                cache = {}
+                for idx in range(len(flashcards)):
+                    item = flashcards[idx]
+                    if not isinstance(item, dict):
+                        continue
+                    query = _build_image_query(item)
+                    fallback_query = _build_image_fallback_query(item)
+
+                    img = None
+                    if query:
+                        if query in cache:
+                            img = cache[query]
+                        else:
+                            try:
+                                img = search_photo(query)
+                            except Exception:
+                                img = None
+                            cache[query] = img
+
+                    if not img and fallback_query and fallback_query != query:
+                        if fallback_query in cache:
+                            img = cache[fallback_query]
+                        else:
+                            try:
+                                img = search_photo(fallback_query)
+                            except Exception:
+                                img = None
+                            cache[fallback_query] = img
+                    if img:
+                        image_url, page_url = img
+                        item["imageUrl"] = image_url
+                        item["imagePageUrl"] = page_url
+                        item["imageProvider"] = "pexels"
             return {
                 "tool": tool,
                 "flashcards": flashcards,

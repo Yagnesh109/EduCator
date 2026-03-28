@@ -5,6 +5,7 @@ function HistoryPanel({
   onClearHistory,
   onToggleDetails,
   onDeleteItem,
+  onContinue,
 }) {
   return (
     <section className="history-panel">
@@ -42,9 +43,16 @@ function HistoryPanel({
               </div>
               <p className="history-preview">{item.sourcePreview || "(no preview)"}</p>
               <p className="history-time">{item.createdAt}</p>
-              <button type="button" className="history-detail-btn" onClick={() => onToggleDetails(item.id)}>
-                {expandedHistoryId === item.id ? "Hide Details" : "View Details"}
-              </button>
+              <div className="history-actions-row">
+                <button type="button" className="history-detail-btn" onClick={() => onToggleDetails(item.id)}>
+                  {expandedHistoryId === item.id ? "Hide Details" : "View Details"}
+                </button>
+                {typeof onContinue === "function" && (
+                  <button type="button" className="history-continue-btn" onClick={() => onContinue(item)}>
+                    Continue
+                  </button>
+                )}
+              </div>
               {expandedHistoryId === item.id && (
                 <div className="history-details">
                   {item.summary && (

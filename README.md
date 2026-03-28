@@ -1,4 +1,4 @@
-# Week 4: Content-to-Learning Materials Converter and Smart Study Assistant
+# Week 5: Content-to-Learning Materials Converter and Smart Study Assistant
 
 ## Educational Content Generator AI Agent Development Project - Dual Track Version - EduCator
 

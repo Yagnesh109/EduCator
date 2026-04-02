@@ -11,6 +11,7 @@ import StudySetPage from "./components/upload/StudySetPage";
 import McqPage from "./components/upload/McqPage";
 import FlashcardPage from "./components/upload/FlashcardPage";
 import HistoryPage from "./components/upload/HistoryPage";
+import AnalyticsPage from "./components/upload/AnalyticsPage";
 import SummaryPage from "./components/upload/SummaryPage";
 import FillBlanksPage from "./components/upload/FillBlanksPage";
 import TrueFalsePage from "./components/upload/TrueFalsePage";
@@ -115,6 +116,8 @@ function App() {
           <a href="/uplod" onClick={handleUploadNavClick}>
             Upload
           </a>
+          <Link to="/history">History</Link>
+          <Link to="/analytics">Analytics</Link>
           <Link to="/premium">Premium</Link>
           <a href="/mock-test" onClick={handleMockTestNavClick}>
             Mock Test{" "}
@@ -215,6 +218,14 @@ function App() {
           element={
             <ProtectedRoute user={user}>
               <HistoryPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/analytics"
+          element={
+            <ProtectedRoute user={user}>
+              <AnalyticsPage />
             </ProtectedRoute>
           }
         />

@@ -12,10 +12,8 @@ function YouTubeGuidePage() {
   const premium = usePremium();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [query, setQuery] = useState("");
   const [videos, setVideos] = useState([]);
   const [selectedVideoId, setSelectedVideoId] = useState("");
-  const [filterText, setFilterText] = useState("");
 
   const savedStudySet = useMemo(() => {
     try {
@@ -33,34 +31,6 @@ function YouTubeGuidePage() {
     }
     return err?.message || fallbackMessage;
   };
-
-  const embedUrl = useMemo(() => {
-    const id = String(selectedVideoId || "").trim();
-    if (!id) return "";
-    return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}`;
-  }, [selectedVideoId]);
-
-  const selectedVideo = useMemo(() => {
-    const id = String(selectedVideoId || "").trim();
-    if (!id) return null;
-    return videos.find((video) => String(video?.videoId || "") === id) || null;
-  }, [selectedVideoId, videos]);
-
-  const openUrl = useMemo(() => {
-    const id = String(selectedVideoId || "").trim();
-    if (!id) return "";
-    return `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
-  }, [selectedVideoId]);
-
-  const filteredVideos = useMemo(() => {
-    const q = String(filterText || "").trim().toLowerCase();
-    if (!q) return videos;
-    return videos.filter((video) => {
-      const title = String(video?.title || "").toLowerCase();
-      const channel = String(video?.channelTitle || "").toLowerCase();
-      return title.includes(q) || channel.includes(q);
-    });
-  }, [filterText, videos]);
 
   const buildFormData = () => {
     const formData = new FormData();
@@ -124,9 +94,7 @@ function YouTubeGuidePage() {
         throw new Error(data?.error || raw || "Failed to load YouTube recommendations");
       }
 
-      const nextQuery = String(data?.query || "").trim();
       const nextVideos = Array.isArray(data?.videos) ? data.videos : [];
-      setQuery(nextQuery);
       setVideos(nextVideos);
       setSelectedVideoId(nextVideos[0]?.videoId ? String(nextVideos[0].videoId) : "");
 
@@ -152,7 +120,7 @@ function YouTubeGuidePage() {
       <main className="youtube-guide-page">
         <section className="notebook-shell">
           <div className="notebook-grid notebook-grid-full">
-            <section className="notebook-card">
+            <section className="notebook-card youtube-guide-card">
               <div className="card-header">
                 <h2 className="card-title">YouTube Guide</h2>
                 <div className="card-actions">
@@ -172,24 +140,11 @@ function YouTubeGuidePage() {
     );
   }
 
-  const handleCopyLink = async () => {
-    if (!openUrl) {
-      toast.info("Pick a video first.");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(openUrl);
-      toast.success("Link copied.");
-    } catch (_error) {
-      toast.info("Copy not available in this browser.");
-    }
-  };
-
   return (
     <main className="youtube-guide-page">
       <section className="notebook-shell">
         <div className="notebook-grid notebook-grid-full">
-          <section className="notebook-card">
+          <section className="notebook-card youtube-guide-card">
             <div className="card-header">
               <h2 className="card-title">YouTube Guide</h2>
               <div className="card-actions">
@@ -201,100 +156,66 @@ function YouTubeGuidePage() {
                 </button>
               </div>
             </div>
-            <p className="card-subtitle">Recommendations based on your uploaded source.</p>
 
             <div className="notebook-card-body youtube-guide-body">
-              {query ? <div className="youtube-guide-hint">Based on: {query}</div> : null}
               {loading && <div className="rag-answer">Finding the best videos...</div>}
               {!loading && error ? <div className="rag-answer">{error}</div> : null}
 
               {!loading && !error && (
-                <div className="youtube-guide-layout">
-                  <div className="youtube-guide-player">
-                    <div className="youtube-guide-viewer">
-                      <div className="youtube-guide-aspect">
-                        {embedUrl ? (
-                          <iframe
-                            className="youtube-guide-frame"
-                            title="Recommended YouTube video"
-                            src={embedUrl}
-                            loading="lazy"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                            allowFullScreen
-                            referrerPolicy="strict-origin-when-cross-origin"
-                          />
-                        ) : (
-                          <div className="youtube-guide-empty">Pick a video to start watching.</div>
-                        )}
-                      </div>
-                      <div className="youtube-guide-viewer-meta">
-                        <div className="youtube-guide-viewer-title">{selectedVideo?.title || "Recommended video"}</div>
-                        {selectedVideo?.channelTitle ? (
-                          <div className="youtube-guide-viewer-channel">{selectedVideo.channelTitle}</div>
-                        ) : null}
-                        <div className="youtube-guide-viewer-actions">
-                          <button
-                            type="button"
-                            className="primary-action-btn"
-                            onClick={() => window.open(openUrl, "_blank", "noopener,noreferrer")}
-                            disabled={!openUrl}
-                          >
-                            Open on YouTube
-                          </button>
-                          <button type="button" className="ghost-btn" onClick={handleCopyLink} disabled={!openUrl}>
-                            Copy link
-                          </button>
+                <>
+                  <div className="youtube-rec-grid" role="list">
+                    {videos.map((video) => (
+                      <button
+                        key={video.videoId}
+                        type="button"
+                        className={`youtube-rec-card ${selectedVideoId === video.videoId ? "is-selected" : ""}`}
+                        onClick={() => setSelectedVideoId(video.videoId ? String(video.videoId) : "")}
+                        role="listitem"
+                      >
+                        <img
+                          className="youtube-rec-thumb"
+                          src={video.thumbnailUrl}
+                          alt={video.title || "Video thumbnail"}
+                          loading="lazy"
+                        />
+                        <div className="youtube-rec-meta">
+                          <div className="youtube-rec-card-title">{video.title}</div>
+                          <div className="youtube-rec-channel">{video.channelTitle}</div>
                         </div>
-                      </div>
-                    </div>
+                      </button>
+                    ))}
                   </div>
 
-                  <div className="youtube-guide-list">
-                    <div className="youtube-guide-list-panel">
-                      <div className="youtube-guide-list-head">
-                        <div>
-                          <div className="youtube-guide-list-title">Up next</div>
-                          <div className="youtube-guide-list-subtitle">{videos.length} recommendations</div>
-                        </div>
-                        <input
-                          className="youtube-guide-search"
-                          value={filterText}
-                          onChange={(event) => setFilterText(event.target.value)}
-                          placeholder="Search title or channel"
-                          aria-label="Search recommended videos"
+                  {selectedVideoId ? (
+                    <div className="youtube-player-shell" aria-label="Selected YouTube video player">
+                      <div className="youtube-player-frame">
+                        <iframe
+                          title="YouTube video player"
+                          src={`https://www.youtube.com/embed/${encodeURIComponent(
+                            selectedVideoId
+                          )}?controls=1&rel=0&modestbranding=1&playsinline=1&enablejsapi=1`}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
                         />
                       </div>
-                      <div className="youtube-videos-scroll">
-                        <div className="youtube-videos-grid youtube-videos-grid-page">
-                          {filteredVideos.map((video) => (
-                            <button
-                              key={video.videoId}
-                              type="button"
-                              className={`youtube-video-card ${
-                                selectedVideoId === video.videoId ? "youtube-video-selected" : ""
-                              }`}
-                              onClick={() => setSelectedVideoId(video.videoId)}
-                            >
-                              <img
-                                className="youtube-video-thumb"
-                                src={video.thumbnailUrl}
-                                alt={video.title || "Video thumbnail"}
-                                loading="lazy"
-                              />
-                              <div className="youtube-video-meta">
-                                <div className="youtube-video-title">{video.title}</div>
-                                <div className="youtube-video-channel">{video.channelTitle}</div>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                        {filteredVideos.length === 0 ? (
-                          <div className="youtube-guide-empty-list">No videos match your search.</div>
-                        ) : null}
+
+                      <div className="youtube-player-actions">
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={() => window.open(`https://www.youtube.com/watch?v=${encodeURIComponent(selectedVideoId)}`, "_blank", "noopener,noreferrer")}
+                        >
+                          Open on YouTube
+                        </button>
+                        <div className="youtube-player-hint">Use the player settings (gear) for playback speed.</div>
                       </div>
                     </div>
-                  </div>
-                </div>
+                  ) : null}
+
+                  {videos.length === 0 ? (
+                    <div className="youtube-guide-empty-list">No videos match your search.</div>
+                  ) : null}
+                </>
               )}
             </div>
           </section>

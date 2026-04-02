@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { API_BASE } from "../../config/api";
@@ -10,33 +10,31 @@ import { auth } from "../../firebase";
 function MockTestPage() {
   const navigate = useNavigate();
   const premium = usePremium();
-  const [syllabusText, setSyllabusText] = useState("");
-  const [pastPapersText, setPastPapersText] = useState("");
+
   const [syllabusFile, setSyllabusFile] = useState(null);
   const [pastFile, setPastFile] = useState(null);
   const [totalQuestions, setTotalQuestions] = useState(20);
   const [durationMinutes, setDurationMinutes] = useState(60);
-  const [generating, setGenerating] = useState(false);
-  const [savedSourceHint, setSavedSourceHint] = useState("");
 
-  const savedStudySet = useMemo(() => {
-    try {
-      const raw = localStorage.getItem("educator_study_set") || sessionStorage.getItem("educator_study_set");
-      return raw ? JSON.parse(raw) : null;
-    } catch (_error) {
-      return null;
-    }
-  }, []);
+  const [generating, setGenerating] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-    const label =
-      String(savedStudySet?.sourcePreview || "").trim() ||
-      String(savedStudySet?.sourceFileName || "").trim() ||
-      (Array.isArray(savedStudySet?.sources) && savedStudySet.sources[0]?.label ? String(savedStudySet.sources[0].label) : "");
-    if (label) {
-      setSavedSourceHint(label);
+    if (!generating) {
+      setProgress(0);
+      return;
     }
-  }, [savedStudySet]);
+    setProgress(8);
+    const id = setInterval(() => {
+      setProgress((prev) => {
+        const cap = 92;
+        if (prev >= cap) return prev;
+        const next = prev + Math.max(1, Math.round((cap - prev) * 0.12));
+        return Math.min(cap, next);
+      });
+    }, 450);
+    return () => clearInterval(id);
+  }, [generating]);
 
   if (!premium.canUse("mock_exam")) {
     return (
@@ -51,7 +49,7 @@ function MockTestPage() {
               <div className="notebook-card-body mock-builder-body">
                 <UpgradeNotice title="Mock Exam" message="Upgrade to Platinum to unlock mock exams." />
                 <div style={{ textAlign: "center", marginTop: "1rem" }}>
-                  <button type="button" className="ghost-btn" onClick={() => navigate("/uplod")}>
+                  <button type="button" className="ghost-btn" onClick={() => navigate("/uplod")}> 
                     Back
                   </button>
                 </div>
@@ -72,64 +70,36 @@ function MockTestPage() {
   };
 
   const handleGenerate = async () => {
-    const syllabus = String(syllabusText || "").trim();
-    const pastPapers = String(pastPapersText || "").trim();
     const hasSyllabusFile = syllabusFile instanceof File;
     const hasPastFile = pastFile instanceof File;
 
-    const savedFileId = String(savedStudySet?.sourceFileId || "").trim();
-    const savedText = String(savedStudySet?.sourceText || "").trim();
-
-    if (!syllabus && !hasSyllabusFile && !savedFileId && !savedText) {
-      toast.info("Paste syllabus text, upload a syllabus file, or generate a source in Upload first.");
+    if (!hasSyllabusFile && !hasPastFile) {
+      toast.info("Upload a syllabus or previous year papers file first.");
       return;
     }
 
     try {
       setGenerating(true);
+      setProgress(10);
+
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-      let response;
+      const formData = new FormData();
+      formData.append("totalQuestions", Number(totalQuestions) || 20);
+      formData.append("durationMinutes", Number(durationMinutes) || 60);
 
-      if (syllabus && !hasSyllabusFile && !hasPastFile) {
-        response = await fetch(`${API_BASE}/api/exam/mock`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({
-            syllabus,
-            pastPapers,
-            totalQuestions: Number(totalQuestions) || 20,
-            durationMinutes: Number(durationMinutes) || 60,
-          }),
-        });
-      } else {
-        const formData = new FormData();
-        formData.append("pastPapers", pastPapers);
-        formData.append("totalQuestions", Number(totalQuestions) || 20);
-        formData.append("durationMinutes", Number(durationMinutes) || 60);
+      const primaryFile = hasSyllabusFile ? syllabusFile : pastFile;
+      formData.append("file", primaryFile);
+      formData.append("mode", "file");
 
-        if (hasSyllabusFile) {
-          formData.append("file", syllabusFile);
-          formData.append("mode", "file");
-        } else if (syllabus) {
-          formData.append("syllabus", syllabus);
-        } else if (savedFileId) {
-          formData.append("fileId", savedFileId);
-          formData.append("mode", "file");
-        } else if (savedText) {
-          formData.append("text", savedText);
-          formData.append("mode", "text");
-        }
-
-        if (hasPastFile) {
-          formData.append("pastFile", pastFile);
-        }
-
-        response = await fetch(`${API_BASE}/api/exam/mock`, {
-          method: "POST",
-          body: formData,
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
+      if (hasSyllabusFile && hasPastFile) {
+        formData.append("pastFile", pastFile);
       }
+
+      const response = await fetch(`${API_BASE}/api/exam/mock`, {
+        method: "POST",
+        body: formData,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
 
       const raw = await response.text();
       let data = null;
@@ -142,10 +112,21 @@ function MockTestPage() {
         throw new Error(data?.error || raw || "Failed to generate mock exam");
       }
 
-      const nextMock = data?.mockExam;
-      sessionStorage.setItem("educator_exam_mock", JSON.stringify(nextMock || {}));
+      const nextMock = data?.mockExam || {};
+      const normalizedMock = {
+        ...nextMock,
+        timing: {
+          ...(nextMock?.timing || {}),
+          totalMinutes: Number(nextMock?.timing?.totalMinutes || durationMinutes || 60),
+        },
+        requestedTotalQuestions: Number(totalQuestions) || 20,
+        requestedDurationMinutes: Number(durationMinutes) || 60,
+      };
+
+      sessionStorage.setItem("educator_exam_mock", JSON.stringify(normalizedMock));
       toast.success("Mock exam ready");
-      navigate("/exam-mock", { state: { mockExam: nextMock } });
+      setProgress(100);
+      navigate("/exam-mock", { state: { mockExam: normalizedMock } });
     } catch (error) {
       console.error(error);
       toast.error(getReadableErrorMessage(error, "Failed to generate mock exam"));
@@ -162,68 +143,35 @@ function MockTestPage() {
             <div className="card-header">
               <h2 className="card-title">Mock Test</h2>
             </div>
-            <p className="card-subtitle">
-              Paste syllabus (or upload a file). We’ll generate a timed mock exam.
-            </p>
 
             <div className="notebook-card-body mock-builder-body">
               <div className="mock-exam-panel">
-                <div className="mock-exam-header">
-                  <div>
-                    <h3>Build your exam</h3>
-                    <p>Use your syllabus + past papers to generate a realistic timed test.</p>
-                  </div>
-                  {savedSourceHint ? <div className="mock-source-pill">Last source: {savedSourceHint}</div> : null}
-                </div>
-
                 <div className="mock-builder-grid">
                   <section className="mock-builder-card">
                     <div className="mock-card-head">
-                      <h4>Study material</h4>
-                      <p>Add syllabus content and (optional) past papers.</p>
+                      <h4>Upload sources</h4>
+                      <p>Upload syllabus and/or previous year papers.</p>
                     </div>
 
-                    <div className="mock-field-grid">
+                    <div className="mock-field-grid mock-field-grid-two">
                       <div className="field">
-                        <span>Syllabus text</span>
-                        <textarea
-                          value={syllabusText}
-                          onChange={(e) => setSyllabusText(e.target.value)}
-                          placeholder="Paste syllabus bullets or learning objectives..."
-                          rows={7}
-                        />
-                      </div>
-
-                      <div className="field">
-                        <span>Syllabus file (pdf/docx/pptx/txt)</span>
+                        <span>Syllabus file</span>
                         <input
                           type="file"
                           accept=".pdf,.docx,.pptx,.txt"
                           onChange={(e) => setSyllabusFile(e.target.files?.[0] || null)}
+                          disabled={generating}
                         />
                         {syllabusFile && <p className="file-hint">Using: {syllabusFile.name}</p>}
                       </div>
-                    </div>
-
-                    <div className="mock-divider" />
-
-                    <div className="mock-field-grid">
-                      <div className="field">
-                        <span>Past papers text (optional)</span>
-                        <textarea
-                          value={pastPapersText}
-                          onChange={(e) => setPastPapersText(e.target.value)}
-                          placeholder="Paste past-paper questions or patterns..."
-                          rows={6}
-                        />
-                      </div>
 
                       <div className="field">
-                        <span>Past papers file (optional)</span>
+                        <span>Previous year papers file</span>
                         <input
                           type="file"
                           accept=".pdf,.docx,.pptx,.txt"
                           onChange={(e) => setPastFile(e.target.files?.[0] || null)}
+                          disabled={generating}
                         />
                         {pastFile && <p className="file-hint">Using: {pastFile.name}</p>}
                       </div>
@@ -245,6 +193,7 @@ function MockTestPage() {
                           max="100"
                           value={totalQuestions}
                           onChange={(e) => setTotalQuestions(e.target.value)}
+                          disabled={generating}
                         />
                       </label>
                       <label>
@@ -255,6 +204,7 @@ function MockTestPage() {
                           max="240"
                           value={durationMinutes}
                           onChange={(e) => setDurationMinutes(e.target.value)}
+                          disabled={generating}
                         />
                       </label>
                     </div>
@@ -267,6 +217,7 @@ function MockTestPage() {
                           setTotalQuestions(20);
                           setDurationMinutes(60);
                         }}
+                        disabled={generating}
                       >
                         20Q / 60m
                       </button>
@@ -277,6 +228,7 @@ function MockTestPage() {
                           setTotalQuestions(30);
                           setDurationMinutes(90);
                         }}
+                        disabled={generating}
                       >
                         30Q / 90m
                       </button>
@@ -287,19 +239,32 @@ function MockTestPage() {
                           setTotalQuestions(50);
                           setDurationMinutes(120);
                         }}
+                        disabled={generating}
                       >
                         50Q / 120m
                       </button>
                     </div>
 
                     <div className="mock-builder-actions">
-                      <button type="button" className="ghost-btn" onClick={() => navigate("/uplod")}>
+                      <button type="button" className="ghost-btn" onClick={() => navigate("/uplod")} disabled={generating}>
                         Back to Upload
                       </button>
                       <button type="button" className="primary-action-btn" onClick={handleGenerate} disabled={generating}>
                         {generating ? "Generating..." : "Generate Mock Test"}
                       </button>
                     </div>
+
+                    {generating ? (
+                      <div className="mock-progress" aria-live="polite" aria-busy="true">
+                        <div className="mock-progress-track">
+                          <div className="mock-progress-bar" style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} />
+                        </div>
+                        <div className="mock-progress-meta">
+                          <span>Generating exam…</span>
+                          <span>{Math.min(100, Math.max(0, Math.round(progress)))}%</span>
+                        </div>
+                      </div>
+                    ) : null}
                   </section>
                 </div>
               </div>

@@ -157,6 +157,10 @@ async def create_mock_exam(request: Request):
     except ValueError as exc:
         return JSONResponse(content={"error": str(exc)}, status_code=400)
     except RuntimeError as exc:
-        return JSONResponse(content={"error": str(exc)}, status_code=502)
+        message = str(exc)
+        lowered = message.lower()
+        if "network/dns error" in lowered or "network timeout" in lowered or "cannot resolve" in lowered:
+            return JSONResponse(content={"error": message}, status_code=503)
+        return JSONResponse(content={"error": message}, status_code=502)
     except Exception as exc:
         return JSONResponse(content={"error": f"Unexpected server error: {exc}"}, status_code=500)

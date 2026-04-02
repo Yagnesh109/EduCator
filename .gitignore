@@ -55,6 +55,7 @@ backend/temp_uploads/**
 Thumbs.db
 .vscode/
 .idea/
+.vercel/
 
 # Build outputs
 frontend/build/

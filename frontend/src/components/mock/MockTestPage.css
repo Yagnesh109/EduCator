@@ -63,6 +63,10 @@
   gap: 0.9rem;
 }
 
+.mock-field-grid.mock-field-grid-two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .mock-divider {
   height: 1px;
   background: rgba(17, 36, 60, 0.1);
@@ -101,6 +105,39 @@
   color: #556b83;
 }
 
+.mock-progress {
+  margin-top: 0.85rem;
+  border: 1px solid rgba(17, 36, 60, 0.14);
+  border-radius: 14px;
+  padding: 0.75rem 0.85rem 0.8rem;
+  background: rgba(248, 250, 252, 0.9);
+  display: grid;
+  gap: 0.55rem;
+}
+
+.mock-progress-track {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+.mock-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #1f4fd1, #0ea5e9);
+  transition: width 240ms ease;
+}
+
+.mock-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-weight: 850;
+  color: #27435f;
+  font-size: 0.85rem;
+}
+
 @media (max-width: 980px) {
   .mock-builder-grid {
     grid-template-columns: 1fr;
@@ -111,6 +148,10 @@
   }
 
   .mock-field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mock-field-grid.mock-field-grid-two {
     grid-template-columns: 1fr;
   }
 }

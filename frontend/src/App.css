@@ -1270,9 +1270,25 @@ button:disabled {
 }
 
 .history-btn {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.9rem;
+}
+
+.upload-header-actions {
   position: absolute;
   right: 0;
   top: 0;
+  display: flex;
+  gap: 0.55rem;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.upload-header-actions .history-btn {
+  position: static;
+}
+
+.analytics-btn {
   padding: 0.45rem 0.9rem;
   font-size: 0.9rem;
 }
@@ -1941,6 +1957,23 @@ button:disabled {
   background: #f1f5f9;
   margin: 0.15rem 0 0.6rem;
   flex: 0 0 auto;
+}
+
+.flashcard-credit {
+  margin: -0.3rem 0 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: rgba(71, 85, 105, 0.95);
+}
+
+.flashcard-credit a {
+  color: rgba(2, 132, 199, 0.95);
+  text-decoration: none;
+  font-weight: 950;
+}
+
+.flashcard-credit a:hover {
+  text-decoration: underline;
 }
 
 .other-source-wrap {

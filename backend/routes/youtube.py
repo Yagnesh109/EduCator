@@ -1,6 +1,6 @@
 import os
 import re
-from typing import List
+from typing import Dict, List, Tuple
 
 import requests
 from fastapi import APIRouter, Request
@@ -87,7 +87,7 @@ def _youtube_search(api_key: str, query: str, max_results: int = 8) -> List[dict
         "maxResults": max(1, min(int(max_results or 8), 12)),
         "safeSearch": "moderate",
         "videoEmbeddable": "true",
-        "order": "relevance",
+        "order": "viewCount",
         "relevanceLanguage": "en",
     }
     response = requests.get(url, params=params, timeout=15)
@@ -105,6 +105,7 @@ def _youtube_search(api_key: str, query: str, max_results: int = 8) -> List[dict
         try:
             video_id = item.get("id", {}).get("videoId")
             snippet = item.get("snippet", {}) or {}
+            channel_id = str(snippet.get("channelId") or "").strip()
             thumbs = snippet.get("thumbnails", {}) or {}
             thumb = (
                 (thumbs.get("high") or {}).get("url")
@@ -117,6 +118,7 @@ def _youtube_search(api_key: str, query: str, max_results: int = 8) -> List[dict
             results.append(
                 {
                     "videoId": video_id,
+                    "channelId": channel_id,
                     "title": str(snippet.get("title") or "").strip(),
                     "channelTitle": str(snippet.get("channelTitle") or "").strip(),
                     "publishedAt": str(snippet.get("publishedAt") or "").strip(),
@@ -127,6 +129,90 @@ def _youtube_search(api_key: str, query: str, max_results: int = 8) -> List[dict
         except Exception:
             continue
     return results
+
+
+def _safe_int(value) -> int:
+    try:
+        return int(str(value or "0").strip())
+    except Exception:
+        return 0
+
+
+def _youtube_video_statistics(api_key: str, video_ids: List[str]) -> Dict[str, Dict[str, int]]:
+    ids = [str(v or "").strip() for v in (video_ids or []) if str(v or "").strip()]
+    if not ids:
+        return {}
+
+    url = "https://www.googleapis.com/youtube/v3/videos"
+    params = {"key": api_key, "part": "statistics", "id": ",".join(ids[:50])}
+    response = requests.get(url, params=params, timeout=15)
+    data = response.json() if response.content else {}
+    if response.status_code >= 400:
+        message = data.get("error", {}).get("message") or data.get("error") or "YouTube API error"
+        raise RuntimeError(message)
+
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return {}
+
+    out: Dict[str, Dict[str, int]] = {}
+    for item in items:
+        try:
+            vid = str(item.get("id") or "").strip()
+            stats = item.get("statistics", {}) or {}
+            if not vid:
+                continue
+            out[vid] = {
+                "viewCount": _safe_int(stats.get("viewCount")),
+                "likeCount": _safe_int(stats.get("likeCount")),
+                "commentCount": _safe_int(stats.get("commentCount")),
+            }
+        except Exception:
+            continue
+    return out
+
+
+def _youtube_channel_statistics(api_key: str, channel_ids: List[str]) -> Dict[str, Dict[str, int]]:
+    ids = [str(c or "").strip() for c in (channel_ids or []) if str(c or "").strip()]
+    if not ids:
+        return {}
+
+    url = "https://www.googleapis.com/youtube/v3/channels"
+    params = {"key": api_key, "part": "statistics", "id": ",".join(ids[:50])}
+    response = requests.get(url, params=params, timeout=15)
+    data = response.json() if response.content else {}
+    if response.status_code >= 400:
+        message = data.get("error", {}).get("message") or data.get("error") or "YouTube API error"
+        raise RuntimeError(message)
+
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return {}
+
+    out: Dict[str, Dict[str, int]] = {}
+    for item in items:
+        try:
+            cid = str(item.get("id") or "").strip()
+            stats = item.get("statistics", {}) or {}
+            if not cid:
+                continue
+            out[cid] = {
+                "subscriberCount": _safe_int(stats.get("subscriberCount")),
+                "videoCount": _safe_int(stats.get("videoCount")),
+                "viewCount": _safe_int(stats.get("viewCount")),
+            }
+        except Exception:
+            continue
+    return out
+
+
+def _sort_key(video: dict) -> Tuple[int, int, int, int]:
+    return (
+        _safe_int(video.get("subscriberCount")),
+        _safe_int(video.get("viewCount")),
+        _safe_int(video.get("likeCount")),
+        _safe_int(video.get("commentCount")),
+    )
 
 
 @router.post("/api/youtube/recommend")
@@ -156,6 +242,25 @@ async def recommend_youtube(request: Request):
         query = _derive_query(source_text, preview=preview)
 
         videos = _youtube_search(api_key, query, max_results=max_results)
+        if videos:
+            stats_by_video = _youtube_video_statistics(api_key, [v.get("videoId") for v in videos])
+            stats_by_channel = _youtube_channel_statistics(api_key, [v.get("channelId") for v in videos])
+            enriched = []
+            for v in videos:
+                vid = str(v.get("videoId") or "").strip()
+                cid = str(v.get("channelId") or "").strip()
+                vstats = stats_by_video.get(vid) or {}
+                cstats = stats_by_channel.get(cid) or {}
+                enriched.append(
+                    {
+                        **v,
+                        "viewCount": _safe_int(vstats.get("viewCount")),
+                        "likeCount": _safe_int(vstats.get("likeCount")),
+                        "commentCount": _safe_int(vstats.get("commentCount")),
+                        "subscriberCount": _safe_int(cstats.get("subscriberCount")),
+                    }
+                )
+            videos = sorted(enriched, key=_sort_key, reverse=True)
         return {"query": query, "videos": videos, "meta": {"sourcePreview": preview}}
     except ValueError as exc:
         return JSONResponse(content={"error": str(exc)}, status_code=400)

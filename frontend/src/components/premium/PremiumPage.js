@@ -4,19 +4,8 @@ import { toast } from "react-toastify";
 import { API_BASE } from "../../config/api";
 import { auth } from "../../firebase";
 import usePremium from "../../premium/usePremium";
-import { FEATURE_LABELS, PLAN_DEFS } from "../../premium/plans";
+import { FEATURE_LABELS, PLAN_DEFS, hasFeature } from "../../premium/plans";
 import "./PremiumPage.css";
-
-function PremiumIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="premium-icon">
-      <path
-        d="M12 2l2.35 6.65L21 9l-5.2 3.9L17.7 20 12 16.4 6.3 20l1.9-7.1L3 9l6.65-.35L12 2z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
 
 function CheckIcon() {
   return (
@@ -29,10 +18,42 @@ function CheckIcon() {
   );
 }
 
+function CrossIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="premium-cross">
+      <path
+        d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3 1.4 1.4z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function splitPrice(priceText) {
+  const raw = String(priceText || "").trim();
+  const numberMatch = raw.match(/([0-9,.]+)/);
+  if (!numberMatch) return { amount: raw || "", period: "" };
+
+  const number = numberMatch[1];
+  const prefix = raw.slice(0, numberMatch.index ?? 0).trim();
+  const suffix = raw.slice((numberMatch.index ?? 0) + number.length);
+
+  const amount = `${prefix}${number}`.trim();
+  const periodMatch = suffix.match(/\/\s*(yr|mo|year|month)/i);
+  const periodRaw = (periodMatch?.[1] || "").toLowerCase();
+  const period =
+    periodRaw === "yr" || periodRaw === "year"
+      ? "year"
+      : periodRaw === "mo" || periodRaw === "month"
+        ? "month"
+        : "";
+  return { amount, period };
+}
+
 function PremiumPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const premium = usePremium();
+  const { refresh, plan, active, expiresAtEpoch } = usePremium();
   const [startingCheckout, setStartingCheckout] = useState("");
   const activationStartedRef = useRef(false);
 
@@ -57,7 +78,7 @@ function PremiumPage() {
     (async () => {
       for (let attempt = 0; attempt < 6; attempt += 1) {
         if (canceledLocal) return;
-        const next = await premium.refresh();
+        const next = await refresh();
         if (next?.plan && next.plan !== "free") return;
         await new Promise((resolve) => setTimeout(resolve, 1500 + attempt * 400));
       }
@@ -66,7 +87,7 @@ function PremiumPage() {
     return () => {
       canceledLocal = true;
     };
-  }, [premium.refresh, success]);
+  }, [refresh, success]);
 
   const startCheckout = async (planKey) => {
     if (!auth.currentUser) {
@@ -99,10 +120,12 @@ function PremiumPage() {
   };
 
   const cards = [
-    { key: "silver", theme: "silver", badge: "Starter" },
-    { key: "gold", theme: "gold", badge: "Most popular" },
-    { key: "platinum", theme: "platinum", badge: "Best value" },
+    { key: "silver", theme: "basic", ribbon: "BASIC" },
+    { key: "gold", theme: "standard", ribbon: "STANDARD", featured: true },
+    { key: "platinum", theme: "premium", ribbon: "PREMIUM" },
   ];
+
+  const premiumFeatureRows = ["fill_blanks", "audio_summary", "knowledge_gap", "true_false", "mock_exam", "youtube_guide"];
 
   return (
     <main className="premium-page">
@@ -118,53 +141,58 @@ function PremiumPage() {
               </div>
             </div>
             <p className="card-subtitle">
-              Your plan: <strong className="premium-plan-label">{premium.plan}</strong>
-              {premium.active && premium.expiresAtEpoch ? " (active)" : ""}
+              Your plan: <strong className="premium-plan-label">{plan}</strong>
+              {active && expiresAtEpoch ? " (active)" : ""}
             </p>
 
             <div className="notebook-card-body">
               <div className="premium-grid">
                 {cards.map((card) => {
                   const def = PLAN_DEFS[card.key];
-                  const isCurrent = premium.plan === card.key && premium.active;
+                  const isCurrent = plan === card.key && active;
+                  const price = splitPrice(def.priceText);
                   return (
-                    <article key={card.key} className={`premium-plan premium-plan-${card.theme}`}>
-                      <div className="premium-plan-top">
-                        <div className="premium-plan-badge">{card.badge}</div>
-                        <div className="premium-plan-name">
-                          <PremiumIcon />
-                          {def.label}
+                    <article
+                      key={card.key}
+                      className={`premium-plan premium-plan-${card.theme}${card.featured ? " premium-plan-featured" : ""}`}
+                    >
+                      <div className="premium-plan-ribbon" aria-hidden="true">
+                        <div className="premium-plan-ribbon-inner">
+                          <div className="premium-plan-ribbon-title">{card.ribbon}</div>
+                          <div className="premium-plan-ribbon-subtitle">PACKAGE</div>
                         </div>
-                        <div className="premium-plan-price">{def.priceText}</div>
-                        <div className="premium-plan-note">Billed yearly • Stripe test mode</div>
                       </div>
 
                       <ul className="premium-features">
-                        {def.features.filter((f) => f !== "mcq" && f !== "flashcards" && f !== "text_summary").map((feature) => (
-                          <li key={feature}>
-                            <CheckIcon />
-                            <span>{FEATURE_LABELS[feature] || feature}</span>
-                          </li>
-                        ))}
+                        {premiumFeatureRows.map((feature) => {
+                          const enabled = hasFeature(card.key, feature);
+                          return (
+                            <li key={feature} className={enabled ? "is-on" : "is-off"}>
+                              {enabled ? <CheckIcon /> : <CrossIcon />}
+                              <span>{FEATURE_LABELS[feature] || feature}</span>
+                            </li>
+                          );
+                        })}
                       </ul>
 
-                      <button
-                        type="button"
-                        className="primary-action-btn premium-cta"
-                        onClick={() => startCheckout(card.key)}
-                        disabled={startingCheckout === card.key || isCurrent}
-                      >
-                        {isCurrent ? "Current plan" : startingCheckout === card.key ? "Redirecting..." : `Choose ${def.label}`}
-                      </button>
+                      <div className="premium-plan-bottom">
+                        <div className="premium-plan-price">
+                          <div className="premium-plan-price-amount">{price.amount || def.priceText}</div>
+                          <div className="premium-plan-price-period">{price.period ? `per ${price.period}` : "per year"}</div>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="premium-cta"
+                          onClick={() => startCheckout(card.key)}
+                          disabled={startingCheckout === card.key || isCurrent}
+                        >
+                          {isCurrent ? "CURRENT" : startingCheckout === card.key ? "REDIRECTING..." : "SELECT"}
+                        </button>
+                      </div>
                     </article>
                   );
                 })}
-              </div>
-
-              <div className="premium-footnote">
-                <p>
-                  Included for everyone: <strong>MCQs</strong>, <strong>Flashcards</strong>, <strong>Text summary</strong>.
-                </p>
               </div>
             </div>
           </section>
@@ -175,3 +203,4 @@ function PremiumPage() {
 }
 
 export default PremiumPage;
+

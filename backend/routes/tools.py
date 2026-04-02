@@ -16,22 +16,100 @@ from services.gemini_service import (
     generate_summary_from_source,
     generate_study_set_from_source,
 )
-from services.pexels_service import PEXELS_API_KEY, search_photo
+from services.pexels_service import PEXELS_API_KEY
+from services.unsplash_service import UNSPLASH_ACCESS_KEY
+from services.pexels_service import search_photos as search_pexels_photos
+from services.unsplash_service import search_photos as search_unsplash_photos
 from utils.premium_guard import require_feature
 
 router = APIRouter()
 
+_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "can",
+    "define",
+    "defined",
+    "definition",
+    "do",
+    "does",
+    "explain",
+    "for",
+    "from",
+    "how",
+    "in",
+    "is",
+    "it",
+    "means",
+    "of",
+    "on",
+    "or",
+    "please",
+    "the",
+    "this",
+    "to",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "why",
+    "with",
+}
+
+
+def _extract_keywords(text: str, limit: int = 6) -> list[str]:
+    raw = str(text or "").lower()
+    raw = raw.replace("\n", " ")
+    out: list[str] = []
+    for token in raw.replace("?", " ").replace(".", " ").replace(",", " ").replace(":", " ").split():
+        t = token.strip().strip("\"'()[]{}")
+        if len(t) < 3:
+            continue
+        if t in _STOPWORDS:
+            continue
+        if any(ch.isdigit() for ch in t) and len(t) <= 3:
+            continue
+        if t not in out:
+            out.append(t)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _build_image_query(item: dict) -> str:
     topic = str(item.get("topic") or "").strip()
     front = str(item.get("front") or "").strip()
-    query = topic or front
+    back = str(item.get("back") or "").strip()
+
+    keywords = _extract_keywords(f"{front} {back}", limit=6)
+    if topic:
+        # Prefer concept-focused visuals over random photos.
+        query = f"{topic} diagram illustration {' '.join(keywords[:2])}".strip()
+    else:
+        query = " ".join(keywords[:5]) or front
+        query = f"{query} diagram".strip()
     query = " ".join(query.replace("\n", " ").split())
     return query[:140]
 
 
 def _build_image_fallback_query(item: dict) -> str:
     front = str(item.get("front") or "").strip()
-    query = " ".join(front.replace("\n", " ").split())
+    back = str(item.get("back") or "").strip()
+    topic = str(item.get("topic") or "").strip()
+    keywords = _extract_keywords(f"{topic} {back} {front}", limit=6)
+    if topic:
+        query = f"{topic} concept diagram".strip()
+    else:
+        query = (" ".join(keywords) or front).strip()
+        query = f"{query} concept".strip()
+    query = " ".join(str(query).replace("\n", " ").split())
     return query[:140]
 
 
@@ -157,8 +235,11 @@ async def tool_generate(request: Request):
                 )
                 flashcards = generate_items_from_source(source_text, instruction, expected_count=count)
 
-            if include_images and PEXELS_API_KEY and isinstance(flashcards, list) and len(flashcards) > 0:
-                cache = {}
+            if include_images and isinstance(flashcards, list) and len(flashcards) > 0:
+                candidate_cache = {}
+                cursor_cache = {}
+                used_ids = set()
+                used_urls = set()
                 for idx in range(len(flashcards)):
                     item = flashcards[idx]
                     if not isinstance(item, dict):
@@ -166,31 +247,58 @@ async def tool_generate(request: Request):
                     query = _build_image_query(item)
                     fallback_query = _build_image_fallback_query(item)
 
-                    img = None
-                    if query:
-                        if query in cache:
-                            img = cache[query]
-                        else:
-                            try:
-                                img = search_photo(query)
-                            except Exception:
-                                img = None
-                            cache[query] = img
+                    provider = "unsplash" if UNSPLASH_ACCESS_KEY else ("pexels" if PEXELS_API_KEY else "")
+                    search_many = (
+                        search_unsplash_photos
+                        if provider == "unsplash"
+                        else (search_pexels_photos if provider == "pexels" else None)
+                    )
 
-                    if not img and fallback_query and fallback_query != query:
-                        if fallback_query in cache:
-                            img = cache[fallback_query]
-                        else:
+                    if not provider or not search_many:
+                        break
+
+                    def _get_next_candidate(q: str):
+                        if not q:
+                            return None
+                        if q not in candidate_cache:
                             try:
-                                img = search_photo(fallback_query)
+                                candidate_cache[q] = search_many(q, per_page=8) or []
                             except Exception:
-                                img = None
-                            cache[fallback_query] = img
-                    if img:
-                        image_url, page_url = img
+                                candidate_cache[q] = []
+                            cursor_cache[q] = 0
+                        cur = int(cursor_cache.get(q, 0) or 0)
+                        candidates = candidate_cache.get(q) or []
+                        while cur < len(candidates):
+                            cand = candidates[cur]
+                            cur += 1
+                            cursor_cache[q] = cur
+                            if provider == "unsplash":
+                                image_url, page_url, author_name, author_url, photo_id = cand
+                                unique_key = photo_id or page_url or image_url
+                            else:
+                                image_url, page_url, photo_id = cand
+                                author_name, author_url = "", ""
+                                unique_key = photo_id or page_url or image_url
+
+                            if unique_key in used_ids:
+                                continue
+                            if page_url and page_url in used_urls:
+                                continue
+                            used_ids.add(unique_key)
+                            if page_url:
+                                used_urls.add(page_url)
+                            return image_url, page_url, author_name, author_url
+                        return None
+
+                    chosen = _get_next_candidate(query) or _get_next_candidate(fallback_query)
+                    if chosen:
+                        image_url, page_url, author_name, author_url = chosen
                         item["imageUrl"] = image_url
                         item["imagePageUrl"] = page_url
-                        item["imageProvider"] = "pexels"
+                        if provider == "unsplash":
+                            item["imageAuthorName"] = author_name
+                            item["imageAuthorUrl"] = author_url
+                        item["imageProvider"] = provider
             return {
                 "tool": tool,
                 "flashcards": flashcards,

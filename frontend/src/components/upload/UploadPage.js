@@ -1283,9 +1283,14 @@ function UploadPage({ user }) {
       </div>
       <section className="upload-card upload-layout notebook-shell">
         <header className="upload-header">
-          <button type="button" className="history-btn" onClick={() => navigate("/history")}>
-            History
-          </button>
+          <div className="upload-header-actions">
+            <button type="button" className="history-btn" onClick={() => navigate("/history")}>
+              History
+            </button>
+            <button type="button" className="analytics-btn" onClick={() => navigate("/analytics")}>
+              Analytics
+            </button>
+          </div>
           <h1>{displayName}, Welcome!! Here is the EduCator workspace</h1>
         </header>
 

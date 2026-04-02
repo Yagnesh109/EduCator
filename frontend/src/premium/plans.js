@@ -20,17 +20,17 @@ const PLAN_DEFS = {
   },
   silver: {
     label: "Silver",
-    priceText: "₹200/yr",
+    priceText: "\u20b9200/yr",
     features: ["mcq", "flashcards", "text_summary", "fill_blanks", "audio_summary", "knowledge_gap"],
   },
   gold: {
     label: "Gold",
-    priceText: "₹500/yr",
+    priceText: "\u20b9500/yr",
     features: ["mcq", "flashcards", "text_summary", "fill_blanks", "audio_summary", "knowledge_gap", "true_false"],
   },
   platinum: {
     label: "Platinum",
-    priceText: "₹1000/yr",
+    priceText: "\u20b91000/yr",
     features: ["mcq", "flashcards", "text_summary", "fill_blanks", "audio_summary", "knowledge_gap", "true_false", "mock_exam", "youtube_guide"],
   },
 };
@@ -63,3 +63,4 @@ function requiredPlanForFeature(feature) {
 }
 
 export { PLAN_ORDER, PLAN_DEFS, FEATURE_LABELS, hasFeature, requiredPlanForFeature, getPlanRank };
+

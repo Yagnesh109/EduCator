@@ -664,12 +664,16 @@ function StudySetPage({ mode }) {
               }}
               disabled={regenerating}
             />
-            <button type="button" className="ghost-btn" onClick={handleSmartRevision} disabled={revisionLoading}>
-              {revisionLoading ? "Preparing..." : "Start Smart Revision"}
-            </button>
-            <button type="button" className="ghost-btn" onClick={() => setVoiceTutorOpen((prev) => !prev)}>
-              {voiceTutorOpen ? "Close Voice Tutor" : "Start Voice Tutor"}
-            </button>
+            {(lockedMode ? initialTab === "mcq" : activeTab === "mcq") ? (
+              <>
+                <button type="button" className="ghost-btn" onClick={handleSmartRevision} disabled={revisionLoading}>
+                  {revisionLoading ? "Preparing..." : "Start Smart Revision"}
+                </button>
+                <button type="button" className="ghost-btn" onClick={() => setVoiceTutorOpen((prev) => !prev)}>
+                  {voiceTutorOpen ? "Close Voice Tutor" : "Start Voice Tutor"}
+                </button>
+              </>
+            ) : null}
           </div>
         </header>
 

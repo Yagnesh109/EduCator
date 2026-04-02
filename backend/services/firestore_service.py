@@ -1,6 +1,7 @@
 import os
 import time
 from datetime import datetime, timezone
+import json
 
 try:
     import firebase_admin
@@ -12,6 +13,7 @@ except ImportError:  # pragma: no cover
 
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
 FIREBASE_SERVICE_ACCOUNT_PATH = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "")
+FIREBASE_SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
 FIREBASE_SESSION_COLLECTION = os.getenv("FIREBASE_SESSION_COLLECTION", "study_sessions")
 FIREBASE_SPACED_COLLECTION = os.getenv("FIREBASE_SPACED_COLLECTION", "spaced_plans")
 
@@ -29,7 +31,18 @@ def get_firestore_db():
 
     try:
         if not firebase_admin._apps:
-            if FIREBASE_SERVICE_ACCOUNT_PATH:
+            if FIREBASE_SERVICE_ACCOUNT_JSON:
+                try:
+                    data = json.loads(FIREBASE_SERVICE_ACCOUNT_JSON)
+                except Exception:
+                    FIREBASE_INIT_ERROR = "Invalid FIREBASE_SERVICE_ACCOUNT_JSON (must be valid JSON)"
+                    return None
+                cred = credentials.Certificate(data)
+                if FIREBASE_PROJECT_ID:
+                    firebase_admin.initialize_app(cred, {"projectId": FIREBASE_PROJECT_ID})
+                else:
+                    firebase_admin.initialize_app(cred)
+            elif FIREBASE_SERVICE_ACCOUNT_PATH:
                 service_path = FIREBASE_SERVICE_ACCOUNT_PATH
                 if not os.path.isabs(service_path):
                     service_path = os.path.join(os.path.dirname(__file__), "..", service_path)
@@ -81,6 +94,14 @@ def serialize_history_doc(doc_id, doc):
         "fillBlanks": doc.get("fillBlanks", []),
         "trueFalse": doc.get("trueFalse", []),
         "summary": doc.get("summary", ""),
+        "examConcepts": doc.get("examConcepts", []),
+        "examTotalQuestions": doc.get("examTotalQuestions", 0),
+        "examDurationMinutes": doc.get("examDurationMinutes", 0),
+        "examAttempted": doc.get("examAttempted", 0),
+        "examCorrect": doc.get("examCorrect", 0),
+        "examWrong": doc.get("examWrong", 0),
+        "examNotAttempted": doc.get("examNotAttempted", 0),
+        "examSectionStats": doc.get("examSectionStats", {}),
         "createdAt": doc.get("createdAt", ""),
         "createdAtEpoch": doc.get("createdAtEpoch", 0),
         "updatedAt": doc.get("updatedAt", ""),
@@ -137,6 +158,15 @@ def save_session_history(payload):
     true_false = payload.get("trueFalse", [])
     summary = str(payload.get("summary", "")).strip()
 
+    exam_concepts = payload.get("examConcepts", [])
+    exam_total_questions = int(payload.get("examTotalQuestions", 0) or 0)
+    exam_duration_minutes = int(payload.get("examDurationMinutes", 0) or 0)
+    exam_attempted = int(payload.get("examAttempted", 0) or 0)
+    exam_correct = int(payload.get("examCorrect", 0) or 0)
+    exam_wrong = int(payload.get("examWrong", 0) or 0)
+    exam_not_attempted = int(payload.get("examNotAttempted", 0) or 0)
+    exam_section_stats = payload.get("examSectionStats", {})
+
     now_iso = datetime.now(timezone.utc).isoformat()
     now_epoch = int(time.time())
 
@@ -161,6 +191,14 @@ def save_session_history(payload):
         "fillBlanks": fill_blanks if isinstance(fill_blanks, list) else [],
         "trueFalse": true_false if isinstance(true_false, list) else [],
         "summary": summary[:4000],
+        "examConcepts": exam_concepts if isinstance(exam_concepts, list) else [],
+        "examTotalQuestions": max(0, exam_total_questions),
+        "examDurationMinutes": max(0, exam_duration_minutes),
+        "examAttempted": max(0, exam_attempted),
+        "examCorrect": max(0, exam_correct),
+        "examWrong": max(0, exam_wrong),
+        "examNotAttempted": max(0, exam_not_attempted),
+        "examSectionStats": exam_section_stats if isinstance(exam_section_stats, dict) else {},
         "createdAt": now_iso,
         "createdAtEpoch": now_epoch,
         "updatedAt": now_iso,

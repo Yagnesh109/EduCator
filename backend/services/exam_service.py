@@ -2,6 +2,7 @@ import json
 import os
 import re
 import time
+from urllib.parse import urlparse
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
@@ -17,6 +18,39 @@ GEMINI_EXAM_MODEL = os.getenv("GEMINI_EXAM_MODEL", "gemini-2.5-flash")
 GEMINI_EXAM_MAX_TOKENS = int(os.getenv("GEMINI_EXAM_MAX_TOKENS", "3000"))
 GEMINI_EXAM_TIMEOUT_SECONDS = int(os.getenv("GEMINI_EXAM_TIMEOUT_SECONDS", "90"))
 GEMINI_EXAM_MAX_RETRIES = int(os.getenv("GEMINI_EXAM_MAX_RETRIES", "1"))
+
+
+def _friendly_network_error(endpoint: str, exc: Exception) -> str:
+    host = ""
+    try:
+        host = urlparse(endpoint).hostname or ""
+    except Exception:
+        host = ""
+
+    msg = str(exc) or exc.__class__.__name__
+    msg_lower = msg.lower()
+
+    # Windows often reports: "<urlopen error [Errno 11001] getaddrinfo failed>"
+    if "getaddrinfo failed" in msg_lower or "errno 11001" in msg_lower:
+        return (
+            f"Network/DNS error: cannot resolve {host or 'Gemini API host'}. "
+            "Check your internet connection, DNS settings, or proxy/firewall, then try again."
+        )
+
+    if isinstance(exc, urlerror.URLError):
+        reason = getattr(exc, "reason", None)
+        reason_text = str(reason) if reason is not None else msg
+        reason_lower = reason_text.lower()
+        if "timed out" in reason_lower:
+            return f"Network timeout reaching {host or 'Gemini API'}. Try again or increase GEMINI_EXAM_TIMEOUT_SECONDS."
+        if "name or service not known" in reason_lower:
+            return (
+                f"Network/DNS error: cannot resolve {host or 'Gemini API host'}. "
+                "Check your internet/DNS/proxy/firewall, then try again."
+            )
+        return f"Network error reaching {host or 'Gemini API'}: {reason_text}"
+
+    return f"Network error reaching {host or 'Gemini API'}: {msg}"
 
 
 def _call_gemini_exam(prompt, max_output_tokens=GEMINI_EXAM_MAX_TOKENS):
@@ -60,7 +94,7 @@ def _call_gemini_exam(prompt, max_output_tokens=GEMINI_EXAM_MAX_TOKENS):
                 continue
             raise RuntimeError(last_error) from exc
         except Exception as exc:  # pragma: no cover
-            last_error = str(exc)
+            last_error = _friendly_network_error(endpoint, exc)
             if attempt < GEMINI_EXAM_MAX_RETRIES:
                 time.sleep(1.0 + attempt)
                 continue
@@ -96,21 +130,51 @@ def generate_mock_exam(syllabus_text, past_papers_text="", sections=None, total_
     section_lines = "\n".join(
         [f"- {s['name']} ({s['questions']} questions, weight {s['weight']:.2f})" for s in sections]
     )
-    prompt = (
-        "You are an exam setter. Build a timed mock exam focused strictly on the syllabus and past papers provided.\n"
-        f"Total questions: {total_questions}. Total time (minutes): {duration_minutes}.\n"
-        "Respect the provided sections/weights; if counts do not sum to total, scale proportionally.\n"
-        "Output a strict JSON object with keys: sections, questions, timing.\n"
-        "sections: list of {name, plannedQuestions, weight, focusTopics[]}.\n"
-        "questions: list of objects with fields "
-        "{id, section, question, options[4], answer, explanation, difficulty (easy|medium|hard), suggestedTimeMinutes}.\n"
-        "timing: {totalMinutes, recommendedPacingPerSection: map section->minutes}.\n"
-        "Use only syllabus/past paper topics; avoid generic filler.\n"
-        "Return JSON only, no markdown, no comments.\n"
-        f"Syllabus:\n{syllabus_text}\n\nPast papers (optional):\n{past_papers_text}\n\n"
-        "Sections requested:\n"
-        f"{section_lines}\n"
-    )
+    prompt = f"""
+You are an exam setter. Build ONE timed mock exam focused strictly on the syllabus and (optional) past papers.
+
+STRICT REQUIREMENTS (must follow exactly):
+1) Output MUST be a single valid JSON object. No markdown, no comments, no extra text.
+2) Output keys MUST be exactly: "sections", "questions", "timing". No other top-level keys.
+3) questions MUST contain EXACTLY {total_questions} items.
+4) Each question MUST be a single-correct MCQ with EXACTLY 4 options (array of 4 distinct strings).
+5) "answer" MUST match EXACTLY one of the 4 option strings (case + spacing).
+6) No duplicate questions; no duplicate options inside a question; avoid trivial "All of the above"/"None of the above".
+7) Use ONLY the syllabus/past paper topics. If something is missing, ask an easier question from available topics (do not invent).
+8) timing.totalMinutes MUST be exactly {duration_minutes} (integer).
+9) suggestedTimeMinutes MUST be an integer 1..10. Sum across all questions SHOULD be close to totalMinutes.
+10) difficulty MUST be one of: "easy", "medium", "hard".
+
+SECTIONS:
+- You MUST respect the requested section distribution below.
+- In "sections", include list items: {{name, plannedQuestions, weight, focusTopics}}.
+- plannedQuestions across sections MUST sum to {total_questions}.
+
+TIMING:
+- timing MUST be: {{ "totalMinutes": {duration_minutes}, "recommendedPacingPerSection": {{ sectionName: minutesInt }} }}
+- recommendedPacingPerSection MUST include ALL section names and minutes MUST sum to {duration_minutes}.
+
+QUESTION OBJECT SCHEMA (repeat exactly for each question):
+{{
+  "id": "q-1",
+  "section": "Section name from sections[].name",
+  "question": "string",
+  "options": ["A", "B", "C", "D"],
+  "answer": "one of the options[] strings",
+  "explanation": "1-2 sentences",
+  "difficulty": "easy|medium|hard",
+  "suggestedTimeMinutes": 1
+}}
+
+Syllabus:
+{syllabus_text}
+
+Past papers (optional):
+{past_papers_text}
+
+Sections requested (use these names; adjust plannedQuestions so the sum is exactly {total_questions} if needed):
+{section_lines}
+""".strip()
 
     body = _call_gemini_exam(prompt, max_output_tokens=max(GEMINI_EXAM_MAX_TOKENS, 8192))
     data = json.loads(body)
@@ -190,4 +254,20 @@ def generate_mock_exam(syllabus_text, past_papers_text="", sections=None, total_
     questions = result.get("questions", []) if isinstance(result, dict) else []
     if not questions:
         raise RuntimeError("Mock exam JSON missing questions")
+
+    if not isinstance(questions, list):
+        raise RuntimeError("Mock exam JSON questions must be a list")
+
+    if len(questions) < total_questions:
+        raise RuntimeError(f"Mock exam generated {len(questions)} questions, expected {total_questions}. Please regenerate.")
+
+    if len(questions) > total_questions:
+        questions = questions[:total_questions]
+
+    result["questions"] = questions
+    timing = result.get("timing", {})
+    if not isinstance(timing, dict):
+        timing = {}
+    timing["totalMinutes"] = duration_minutes
+    result["timing"] = timing
     return result

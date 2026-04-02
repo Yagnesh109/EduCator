@@ -7,6 +7,8 @@ function HistoryPanel({
   onDeleteItem,
   onContinue,
 }) {
+  const isExamAttempt = (item) => String(item?.kind || "") === "mock_exam_attempt";
+
   return (
     <section className="history-panel">
       <div className="history-header">
@@ -22,10 +24,18 @@ function HistoryPanel({
           {historyItems.map((item) => (
             <li key={item.id} className="history-item">
               <div className="history-item-head">
-                <p>
-                  <strong>Source:</strong> {item.sourceType || "source"} | <strong>MCQ Score:</strong>{" "}
-                  {item.mcqCorrect || 0}/{item.mcqTotal || 0}
-                </p>
+                {isExamAttempt(item) ? (
+                  <p>
+                    <strong>Mock Exam</strong> | <strong>Score:</strong> {item.examCorrect || 0}/{item.examTotalQuestions || 0} |{" "}
+                    <strong>Correct:</strong> {item.examCorrect || 0} | <strong>Wrong:</strong> {item.examWrong || 0} |{" "}
+                    <strong>Not attempted:</strong> {item.examNotAttempted || 0}
+                  </p>
+                ) : (
+                  <p>
+                    <strong>Source:</strong> {item.sourceType || "source"} | <strong>MCQ Score:</strong>{" "}
+                    {item.mcqCorrect || 0}/{item.mcqTotal || 0}
+                  </p>
+                )}
                 <button
                   type="button"
                   className="history-delete-btn"
@@ -47,7 +57,7 @@ function HistoryPanel({
                 <button type="button" className="history-detail-btn" onClick={() => onToggleDetails(item.id)}>
                   {expandedHistoryId === item.id ? "Hide Details" : "View Details"}
                 </button>
-                {typeof onContinue === "function" && (
+                {typeof onContinue === "function" && !isExamAttempt(item) && (
                   <button type="button" className="history-continue-btn" onClick={() => onContinue(item)}>
                     Continue
                   </button>
@@ -55,6 +65,20 @@ function HistoryPanel({
               </div>
               {expandedHistoryId === item.id && (
                 <div className="history-details">
+                  {isExamAttempt(item) && (
+                    <>
+                      <h4>Exam details</h4>
+                      <p>
+                        <strong>Questions:</strong> {item.examTotalQuestions || 0} | <strong>Duration:</strong>{" "}
+                        {item.examDurationMinutes || 0} min | <strong>Attempted:</strong> {item.examAttempted || 0}
+                      </p>
+                      {Array.isArray(item.examConcepts) && item.examConcepts.length > 0 ? (
+                        <p>
+                          <strong>Concepts:</strong> {item.examConcepts.join(", ")}
+                        </p>
+                      ) : null}
+                    </>
+                  )}
                   {item.summary && (
                     <>
                       <h4>Summary</h4>

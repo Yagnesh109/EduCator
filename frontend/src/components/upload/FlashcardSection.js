@@ -23,12 +23,14 @@ function FlashcardSection({ flashcards, knownMap = null, onMark = null }) {
                   <div className={`flip-card-face flip-card-front ${imageUrl ? "flashcard-has-image" : ""}`}>
                     <p className="flashcard-label">Question</p>
                     {imageUrl && (
-                      <img
-                        className="flashcard-image"
-                        src={imageUrl}
-                        alt={item.topic || item.front || "Flashcard visual"}
-                        loading="lazy"
-                      />
+                      <>
+                        <img
+                          className="flashcard-image"
+                          src={imageUrl}
+                          alt={item.topic || item.front || "Flashcard visual"}
+                          loading="lazy"
+                        />
+                      </>
                     )}
                     <div className="flashcard-scroll">
                       <p className="flashcard-text">{item.front}</p>

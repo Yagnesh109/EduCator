@@ -60,6 +60,10 @@ function PremiumPage() {
   const query = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const success = query.get("success") === "1";
   const canceled = query.get("canceled") === "1";
+  const sessionId = useMemo(
+    () => query.get("session_id") || query.get("sessionId") || "",
+    [query]
+  );
 
   useEffect(() => {
     if (canceled) {
@@ -76,6 +80,18 @@ function PremiumPage() {
     let canceledLocal = false;
 
     (async () => {
+      if (auth.currentUser && sessionId) {
+        try {
+          const token = await auth.currentUser.getIdToken();
+          await fetch(`${API_BASE}/api/billing/confirm`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId }),
+          });
+        } catch (error) {
+          console.error(error);
+        }
+      }
       for (let attempt = 0; attempt < 6; attempt += 1) {
         if (canceledLocal) return;
         const next = await refresh();
@@ -87,7 +103,7 @@ function PremiumPage() {
     return () => {
       canceledLocal = true;
     };
-  }, [refresh, success]);
+  }, [refresh, sessionId, success]);
 
   const startCheckout = async (planKey) => {
     if (!auth.currentUser) {

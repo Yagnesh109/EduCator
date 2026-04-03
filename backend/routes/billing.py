@@ -188,6 +188,62 @@ async def create_checkout(request: Request):
         return JSONResponse(content={"error": f"Unexpected server error: {exc}"}, status_code=500)
 
 
+@router.post("/api/billing/confirm")
+async def confirm_checkout(request: Request):
+    """
+    Fallback activation endpoint for success redirects.
+    Verifies the Stripe checkout session belongs to the current Firebase user and was paid,
+    then stores entitlement in Firestore.
+
+    This helps when webhooks are not configured/reachable in production.
+    """
+    try:
+        uid, _email = _require_firebase_user(request)
+        _require_stripe()
+
+        payload = await request.json()
+        session_id = str((payload or {}).get("sessionId") or (payload or {}).get("session_id") or "").strip()
+        if not session_id:
+            return JSONResponse(content={"error": "sessionId is required"}, status_code=400)
+
+        session = stripe.checkout.Session.retrieve(session_id)
+        if not isinstance(session, dict):
+            return JSONResponse(content={"error": "Invalid session"}, status_code=400)
+
+        if str(session.get("payment_status") or "").lower() != "paid":
+            return JSONResponse(content={"error": "Payment not completed"}, status_code=400)
+
+        meta = session.get("metadata") or {}
+        session_uid = str(meta.get("uid") or session.get("client_reference_id") or "").strip()
+        if not session_uid or session_uid != uid:
+            return JSONResponse(content={"error": "Session does not belong to current user"}, status_code=403)
+
+        plan = str(meta.get("plan") or "").strip().lower()
+        if plan not in PLAN_CATALOG:
+            return JSONResponse(content={"error": "Invalid plan on session"}, status_code=400)
+
+        expires_at = int(time.time()) + 365 * 24 * 60 * 60
+        ok, _message = set_user_entitlement(
+            uid,
+            plan,
+            expires_at,
+            email=str((session.get("customer_details") or {}).get("email") or ""),
+            stripe_customer_id=str(session.get("customer") or ""),
+            stripe_checkout_session_id=str(session.get("id") or ""),
+            stripe_payment_intent_id=str(session.get("payment_intent") or ""),
+        )
+        if not ok:
+            return JSONResponse(content={"error": "Failed to store entitlement"}, status_code=502)
+
+        return {"ok": True, "plan": plan, "expiresAtEpoch": expires_at}
+    except ValueError as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=401)
+    except RuntimeError as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=502)
+    except Exception as exc:
+        return JSONResponse(content={"error": f"Unexpected server error: {exc}"}, status_code=500)
+
+
 @router.post("/api/billing/webhook")
 async def stripe_webhook(request: Request):
     try:

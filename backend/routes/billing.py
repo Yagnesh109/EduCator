@@ -22,7 +22,33 @@ router = APIRouter()
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").rstrip("/")
+
+
+def _get_frontend_base_url(request: Request) -> str:
+    """
+    Prefer configured FRONTEND_BASE_URL (Render/Vercel).
+    Fallback to request Origin/Referer (helps when env is missing/misconfigured).
+    """
+    configured = os.getenv("FRONTEND_BASE_URL", "").strip().rstrip("/")
+    if configured:
+        return configured
+
+    origin = (request.headers.get("origin") or "").strip().rstrip("/")
+    if origin.startswith("http"):
+        return origin
+
+    referer = (request.headers.get("referer") or "").strip()
+    if referer.startswith("http"):
+        try:
+            # Very small parser to avoid importing urllib just for this.
+            # Keep scheme + host only.
+            parts = referer.split("/")
+            if len(parts) >= 3:
+                return f"{parts[0]}//{parts[2]}"
+        except Exception:
+            pass
+
+    return "http://localhost:3000"
 
 # Best-effort idempotency for local/dev: avoid re-processing the same Stripe event repeatedly.
 _PROCESSED_EVENTS = {}
@@ -126,8 +152,9 @@ async def create_checkout(request: Request):
 
         _require_stripe()
         item = PLAN_CATALOG[plan]
-        success_url = f"{FRONTEND_BASE_URL}/premium?success=1&session_id={{CHECKOUT_SESSION_ID}}"
-        cancel_url = f"{FRONTEND_BASE_URL}/premium?canceled=1"
+        frontend_base_url = _get_frontend_base_url(request)
+        success_url = f"{frontend_base_url}/premium?success=1&session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url = f"{frontend_base_url}/premium?canceled=1"
 
         session = stripe.checkout.Session.create(
             mode="payment",
@@ -148,7 +175,11 @@ async def create_checkout(request: Request):
             customer_email=email or None,
             metadata={"uid": uid, "plan": plan},
         )
-        return {"checkoutUrl": session.get("url"), "sessionId": session.get("id")}
+        return {
+            "checkoutUrl": session.get("url"),
+            "sessionId": session.get("id"),
+            "frontendBaseUrl": frontend_base_url,
+        }
     except ValueError as exc:
         return JSONResponse(content={"error": str(exc)}, status_code=401)
     except RuntimeError as exc:

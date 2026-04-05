@@ -72,9 +72,6 @@ EduCator turns uploaded study content into practice material (MCQs, flashcards, 
 - Diagnostics:
   Firebase connectivity check via /api/diag/firebase
 
-- Diagram OCR:
-  Extracts text from diagrams/whiteboards using Tesseract (/api/analyze/diagram)
-
 
 ## TECH STACK
 

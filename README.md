@@ -18,9 +18,7 @@ EduCator turns uploaded study content into practice material (MCQs, flashcards, 
 7. Sessions are saved to History (Firestore) and can be restored later.
 8. Premium tools can be unlocked via Stripe test-mode checkout (feature-gated in UI + backend).
 
-## Features Implemented (from codebase)
-FEATURES IMPLEMENTED
-
+## Features Implemented 
 - Multi-format ingestion:
   Supports TXT, PDF, DOCX, PPTX text extraction with temporary upload storage (fileId restore)
 

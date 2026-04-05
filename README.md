@@ -1,62 +1,99 @@
-# Week 5: Content-to-Learning Materials Converter and Smart Study Assistant
+# Week 6: Content-to-Learning Materials Converter & Smart Study Assistant
 
-## Educational Content Generator AI Agent Development Project - Dual Track Version - EduCator
-
-EduCator is a study assistant that turns uploaded content into multiple study resources (MCQs, flashcards, true/false, fill-in-the-blanks, and summaries), with optional text-to-speech and audio generation.
+# Educational Content Generator AI Agent Development Project – Dual Track Version - Educator
+EduCator turns uploaded study content into practice material (MCQs, flashcards, fill-in-the-blanks, true/false, and summaries) and adds retention tools like spaced repetition, revision, and mock exams.
 
 ## Current Workflow
 1. User logs in (Google or email/password).
-2. User adds one or more sources (text + files like `.txt`, `.pdf`, `.docx`, `.pptx`) into a single session (auto-saved).
-3. User generates study resources (default 20 items per tool where applicable):
+2. User adds one or more sources into a single session (text + files: `.txt`, `.pdf`, `.docx`, `.pptx`).
+3. From the Upload page, user generates study tools (UI defaults to **12** items per tool where applicable):
    - MCQs
-   - Flashcards
-   - True/False
-   - Fill-in-the-Blanks
+   - Flashcards (optionally with images)
    - Summary
-4. User practices each resource type and sees scoring/progress (where applicable).
-5. User analyzes Knowledge Gaps to get concept explanations based on wrong answers.
-6. AI Guide answers text or voice questions grounded in the uploaded sources.
-7. Sessions are automatically persisted to History and can be restored later (sources + generated content).
-8. Summary can be spoken (server TTS) and the displayed summary text can be translated to the selected language.
-9. Download outputs (PDF/CSV/Text) from study pages.
-10. Premium tools can be unlocked via Stripe test-mode checkout (feature-gated in UI + backend).
+   - Fill-in-the-Blanks (Premium)
+   - True/False (Premium)
+4. User practices on the respective pages, gets scoring/progress, and can export results.
+5. On the Study Set page, the app builds a spaced-repetition plan and can run Knowledge Gap + Smart Revision analysis.
+6. AI Guide answers questions grounded in the uploaded sources (text + optional voice answer).
+7. Sessions are saved to History (Firestore) and can be restored later.
+8. Premium tools can be unlocked via Stripe test-mode checkout (feature-gated in UI + backend).
 
-## Features Implemented
-- Multi-format input: TXT, PDF, DOCX, PPTX
-- Multi-source sessions (generation uses all added sources in the session)
-- MCQ generation + answer verification + scoring/progress
-- Flashcard generation + review tracking
-- Flashcards image enrichment (images for all flashcards) + consistent card sizing/layout
-- True/False generation + scoring/progress
-- Fill-in-the-Blanks generation + scoring/progress
-- Summary generation (separate summary page)
-- Difficulty levels (easy / medium / hard) with instant re-generation on supported pages
-- Knowledge Gap Analyzer (mode-specific) with concept explanations based on wrong answers
-- AI Guide (text + voice toggle)
-- Voice assistant: speech input + spoken answers
-- Server audio generation (MP3) via `/api/tts`
-- Summary text translation via `/api/translate`
-- OpenRouter integration
-  - MCQs: OpenRouter (google/gemini-2.5-flash)
-  - Flashcards: OpenRouter (google/gemini-2.5-flash)
-  - Summary: OpenRouter via (google/gemini-2.5-flash)
-  - Voice assistant: OpenRouter (google/gemini-2.5-flash)
-- Temporary file storage for uploads (fileId restore on return)
-- Automatic session persistence + restore from History (Firestore-backed)
-- History list with per-item details + delete + clear all + continue
-- Export/download (PDF, CSV, Text) on study pages
-- More MCQs/Flashcards: backend refill endpoint exists (UI button not added yet)
-- Voice options: language selector available
-- Premium plans + server-side entitlement enforcement (Stripe test mode)
-- Feature gating UX: locked tools show a crown and prompt to upgrade
-- YouTube guide: recommends related videos based on the uploaded sources
-- UI refresh: YouTube guide and mock test pages redesigned for a cleaner layout
+## Features Implemented (from codebase)
+FEATURES IMPLEMENTED
 
-## Tech Stack
-- Frontend: React (Create React App) + CSS
-- Backend: FastAPI (Python) + Uvicorn
-- Auth: Firebase Authentication (Google + email/password)
-- Database: Firebase Firestore
-- AI: OpenRouter (Gemini)
-- Payments: Stripe Checkout + webhooks (test mode)
+- Multi-format ingestion:
+  Supports TXT, PDF, DOCX, PPTX text extraction with temporary upload storage (fileId restore)
 
+- Multi-source sessions:
+  Content generation uses all added sources within a session
+
+- MCQ System:
+  MCQ generation, verification (/api/verify/mcq), scoring and progress tracking in UI
+
+- Flashcards:
+  AI-generated flashcards with image enrichment via Unsplash/Pexels APIs and review marking
+
+- Difficulty Control:
+  Easy, Medium, Hard levels with instant regeneration
+
+- Topic Extraction:
+  Key topics extraction via /api/analyze/topics
+
+- Spaced Repetition:
+  Leitner-based scheduling via /api/spaced/schedule with Firestore save/load
+
+- Smart Revision:
+  Prioritizes weak topics and due cards, generates focused revision quiz (/api/revision/start)
+
+- Knowledge Gap Analyzer (Premium):
+  Weak topic detection and grounded revision notes via /api/recommend/knowledge-gaps
+
+- AI Guide (RAG-based):
+  Context-aware Q&A grounded in uploaded sources via /api/qa/source
+
+- Voice Features:
+  Speech-to-text (Web Speech API)
+  Voice Q&A (/api/qa/voice)
+  Audio summaries via /api/tts (Premium: audio_summary)
+
+- Translation:
+  Text and summary translation via /api/translate
+
+- Mock Exam Generator (Premium):
+  Full-length exam generation via /api/exam/mock
+
+- YouTube Guide (Premium):
+  Video recommendations via /api/youtube/recommend (YouTube Data API)
+
+- Export Options:
+  PDF, CSV, and quiz format via /api/export/study-set/{pdf|csv|quiz}
+
+- Billing:
+  Stripe Checkout, webhook integration, server-side entitlements (/api/billing/*)
+
+- Diagnostics:
+  Firebase connectivity check via /api/diag/firebase
+
+- Diagram OCR:
+  Extracts text from diagrams/whiteboards using Tesseract (/api/analyze/diagram)
+
+
+## TECH STACK
+
+Frontend:
+- React (Create React App)
+- React Router
+- CSS
+- Firebase JS SDK
+- react-toastify
+
+Backend:
+- FastAPI
+- Uvicorn
+- PyPDF2 (PDF processing)
+- gTTS (Text-to-Speech)
+- Firebase Admin SDK
+- Stripe SDK
+
+Database and Storage:
+- Firebase Firestore (user history and spaced repetition data)

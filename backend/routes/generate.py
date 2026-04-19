@@ -17,18 +17,17 @@ os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
 REFILL_POOL_SIZE = int(os.getenv("REFILL_POOL_SIZE", "10"))
 
 from services.gemini_service import (
-    OPENROUTER_API_KEY,
-    OPENROUTER_FLASHCARDS_API_KEY,
-    OPENROUTER_FILL_IN_THE_BLANKS_KEY,
+    GEMINI_API_KEY,
+    GEMINI_MCQ_API_KEY,
+    GEMINI_FLASHCARD_API_KEY,
+    GEMINI_FILLIN_API_KEY,
+    GEMINI_TRUEANDFALSE_API_KEY,
     generate_items_from_source,
-    generate_mcqs_from_source_openrouter,
-    generate_flashcards_from_source_openrouter,
-    generate_fill_in_the_blanks_from_source_openrouter,
-    generate_true_false_from_source_openrouter,
+    generate_fill_in_the_blanks_from_source,
     generate_true_false_from_source,
     generate_summary_from_source,
+    generate_study_set_from_source,
 )
-from services.gemini_service import generate_study_set_from_source
 
 
 def _normalize_text(value):
@@ -517,34 +516,25 @@ async def generate_mcqs(request: Request):
         count = 10
         source_text, source_meta = await get_source_text_from_request(request)
         difficulty = str(source_meta.get("difficulty", "medium")).strip().lower() or "medium"
-        if OPENROUTER_API_KEY:
-            mcqs = _normalize_mcq_items(generate_mcqs_from_source_openrouter(source_text, count, difficulty=difficulty))
-        else:
-            mcq_instruction = (
-                "Difficulty: easy = basic recall/definitions; medium = conceptual and moderately challenging; "
-                "hard = advanced reasoning, nuanced distractors, and deeper understanding.\n"
-                f"Selected difficulty: {difficulty}.\n\n"
-                f"Create exactly {count} MCQs from the provided content. "
-                "Each item must be: "
-                "{\"question\":\"...\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"answer\":\"...\",\"explanation\":\"...\",\"topic\":\"...\"}. "
-                "The explanation should briefly explain why the correct answer is right."
-            )
-            mcqs = _normalize_mcq_items(generate_items_from_source(source_text, mcq_instruction, count))
+        mcq_api_key = GEMINI_MCQ_API_KEY or GEMINI_API_KEY
+        if not mcq_api_key:
+            raise RuntimeError("GEMINI_MCQ_API_KEY or GEMINI_API_KEY is required for MCQ generation")
+        mcqs = _normalize_mcq_items(generate_items_from_source(source_text, (
+            "Difficulty: easy = basic recall/definitions; medium = conceptual and moderately challenging; "
+            "hard = advanced reasoning, nuanced distractors, and deeper understanding.\n"
+            f"Selected difficulty: {difficulty}.\n\n"
+            f"Create exactly {count} MCQs from the provided content. "
+            "Each item must be: "
+            "{\"question\":\"...\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"answer\":\"...\",\"explanation\":\"...\",\"topic\":\"...\"}. "
+            "The explanation should briefly explain why the correct answer is right."
+        ), expected_count=count, api_key=mcq_api_key))
         mcq_set_id = store_mcq_session(mcqs)
         update_mcq_session(mcq_set_id, items=mcqs, flashcards=[], source_text=source_text)
         return {"mcqs": mcqs, "mcqSetId": mcq_set_id}
     except ValueError as exc:
         return JSONResponse(content={"error": str(exc)}, status_code=400)
     except RuntimeError as exc:
-        if OPENROUTER_API_KEY:
-            return JSONResponse(content={"error": str(exc)}, status_code=502)
-        try:
-            mcqs = _normalize_mcq_items(_fallback_mcqs(source_text, count=count))
-            mcq_set_id = store_mcq_session(mcqs)
-            update_mcq_session(mcq_set_id, items=mcqs, flashcards=[], source_text=source_text)
-            return {"mcqs": mcqs, "mcqSetId": mcq_set_id, "fallback": True, "warning": str(exc)}
-        except Exception:
-            return JSONResponse(content={"error": str(exc)}, status_code=502)
+        return JSONResponse(content={"error": str(exc)}, status_code=502)
     except Exception as exc:
         return JSONResponse(content={"error": f"Unexpected server error: {exc}"}, status_code=500)
 
@@ -555,27 +545,21 @@ async def generate_flashcards(request: Request):
         count = 10
         source_text, source_meta = await get_source_text_from_request(request)
         difficulty = str(source_meta.get("difficulty", "medium")).strip().lower() or "medium"
-        if OPENROUTER_FLASHCARDS_API_KEY:
-            flashcards = generate_flashcards_from_source_openrouter(source_text, count, difficulty=difficulty)
-        else:
-            flashcard_instruction = (
-                "Difficulty: easy = direct definitions; medium = conceptual Q/A; hard = nuanced, tricky, and application-focused.\n"
-                f"Selected difficulty: {difficulty}.\n\n"
-                f"Create exactly {count} flashcards from the provided content. "
-                "Each item must be: {\"front\":\"...\",\"back\":\"...\",\"topic\":\"...\"}."
-            )
-            flashcards = generate_items_from_source(source_text, flashcard_instruction, count)
+        api_key = GEMINI_FLASHCARD_API_KEY or GEMINI_API_KEY
+        if not api_key:
+            raise RuntimeError("GEMINI_FLASHCARD_API_KEY or GEMINI_API_KEY is required for flashcard generation")
+        flashcard_instruction = (
+            "Difficulty: easy = direct definitions; medium = conceptual Q/A; hard = nuanced, tricky, and application-focused.\n"
+            f"Selected difficulty: {difficulty}.\n\n"
+            f"Create exactly {count} flashcards from the provided content. "
+            "Each item must be: {\"front\":\"...\",\"back\":\"...\",\"topic\":\"...\"}."
+        )
+        flashcards = generate_items_from_source(source_text, flashcard_instruction, expected_count=count, api_key=api_key)
         return {"flashcards": flashcards}
     except ValueError as exc:
         return JSONResponse(content={"error": str(exc)}, status_code=400)
     except RuntimeError as exc:
-        if OPENROUTER_FLASHCARDS_API_KEY:
-            return JSONResponse(content={"error": str(exc)}, status_code=502)
-        try:
-            flashcards = _fallback_flashcards(source_text, count=count)
-            return {"flashcards": flashcards, "fallback": True, "warning": str(exc)}
-        except Exception:
-            return JSONResponse(content={"error": str(exc)}, status_code=502)
+        return JSONResponse(content={"error": str(exc)}, status_code=502)
     except Exception as exc:
         return JSONResponse(content={"error": f"Unexpected server error: {exc}"}, status_code=500)
 
@@ -586,9 +570,10 @@ async def generate_fill_blanks(request: Request):
         count = 10
         source_text, source_meta = await get_source_text_from_request(request)
         difficulty = str(source_meta.get("difficulty", "medium")).strip().lower() or "medium"
-        if not OPENROUTER_FILL_IN_THE_BLANKS_KEY:
-            raise RuntimeError("OPENROUTER_FILL_IN_THE_BLANKS_KEY is missing in backend environment")
-        items = generate_fill_in_the_blanks_from_source_openrouter(source_text, count, difficulty=difficulty)
+        api_key = GEMINI_FILLIN_API_KEY or GEMINI_API_KEY
+        if not api_key:
+            raise RuntimeError("GEMINI_FILLIN_API_KEY or GEMINI_API_KEY is required for fill-in-the-blanks generation")
+        items = generate_fill_in_the_blanks_from_source(source_text, expected_count=count, difficulty=difficulty, api_key=api_key)
         return {"fillBlanks": items}
     except ValueError as exc:
         return JSONResponse(content={"error": str(exc)}, status_code=400)
@@ -604,14 +589,10 @@ async def generate_true_false(request: Request):
         count = 10
         source_text, source_meta = await get_source_text_from_request(request)
         difficulty = str(source_meta.get("difficulty", "medium")).strip().lower() or "medium"
-        # Prefer Gemini true/false key; fall back to legacy OpenRouter if configured.
-        if os.getenv("GEMINI_TRUEANDFALSE_API_KEY") or os.getenv("GEMINI_API_KEY"):
-            api_key = os.getenv("GEMINI_TRUEANDFALSE_API_KEY") or os.getenv("GEMINI_API_KEY")
-            items = generate_true_false_from_source(source_text, expected_count=count, difficulty=difficulty, api_key=api_key)
-        else:
-            if not OPENROUTER_TRUE_FALSE_KEY:
-                raise RuntimeError("No true/false provider configured in backend environment")
-            items = generate_true_false_from_source_openrouter(source_text, count, difficulty=difficulty)
+        api_key = GEMINI_TRUEANDFALSE_API_KEY or GEMINI_API_KEY
+        if not api_key:
+            raise RuntimeError("GEMINI_TRUEANDFALSE_API_KEY or GEMINI_API_KEY is required for true/false generation")
+        items = generate_true_false_from_source(source_text, expected_count=count, difficulty=difficulty, api_key=api_key)
         return {"trueFalse": items}
     except ValueError as exc:
         return JSONResponse(content={"error": str(exc)}, status_code=400)

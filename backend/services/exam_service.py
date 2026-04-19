@@ -13,7 +13,8 @@ from utils.mcq_utils import (
     extract_json_object,
 )
 
-GEMINI_EXAM_API_KEY = os.getenv("GEMINI_EXAM_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")
+GEMINI_MOCKTEST_API_KEY = os.getenv("GEMINI_MOCKTEST_API_KEY", "")
+GEMINI_EXAM_API_KEY = os.getenv("GEMINI_EXAM_API_KEY", "") or GEMINI_MOCKTEST_API_KEY or os.getenv("GEMINI_API_KEY", "")
 GEMINI_EXAM_MODEL = os.getenv("GEMINI_EXAM_MODEL", "gemini-2.5-flash")
 GEMINI_EXAM_MAX_TOKENS = int(os.getenv("GEMINI_EXAM_MAX_TOKENS", "3000"))
 GEMINI_EXAM_TIMEOUT_SECONDS = int(os.getenv("GEMINI_EXAM_TIMEOUT_SECONDS", "90"))

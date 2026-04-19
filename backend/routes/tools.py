@@ -7,17 +7,14 @@ from services.gemini_service import (
     GEMINI_API_KEY,
     GEMINI_MCQ_API_KEY,
     GEMINI_FLASHCARD_API_KEY,
-    OPENROUTER_FLASHCARDS_API_KEY,
-    OPENROUTER_FILL_IN_THE_BLANKS_KEY,
-    OPENROUTER_API_KEY,
-    MATCH_THE_PAIR_API,
+    GEMINI_FILLIN_API_KEY,
+    GEMINI_TRUEANDFALSE_API_KEY,
+    GEMINI_VOICE_API_KEY,
+    GEMINI_SUMMARY_API_KEY,
+    GEMINI_TEXTAI_API_KEY,
     generate_items_from_source,
-    generate_mcqs_from_source_openrouter,
-    generate_flashcards_from_source_openrouter,
-    generate_fill_in_the_blanks_from_source_openrouter,
-    generate_true_false_from_source_openrouter,
+    generate_fill_in_the_blanks_from_source,
     generate_true_false_from_source,
-    generate_match_the_pair_from_source_openrouter,
     generate_summary_from_source,
     generate_study_set_from_source,
 )
@@ -218,22 +215,9 @@ async def tool_generate(request: Request):
                     "The explanation should briefly explain why the correct answer is right."
                 )
                 mcq_api_key = GEMINI_MCQ_API_KEY or GEMINI_API_KEY
+                if not mcq_api_key:
+                    raise RuntimeError("GEMINI_MCQ_API_KEY or GEMINI_API_KEY is required for MCQ generation")
                 mcqs = generate_items_from_source(source_text, instruction, expected_count=count, api_key=mcq_api_key)
-            elif OPENROUTER_API_KEY:
-                provider = "openrouter"
-                mcqs = generate_mcqs_from_source_openrouter(source_text, expected_count=count, difficulty=difficulty)
-            else:
-                provider = "gemini"
-                instruction = (
-                    "Difficulty: easy = basic recall/definitions; medium = conceptual and moderately challenging; "
-                    "hard = advanced reasoning, nuanced distractors, and deeper understanding.\n"
-                    f"Selected difficulty: {difficulty}.\n\n"
-                    f"Create exactly {count} MCQs from the provided content. "
-                    "Each item must be: "
-                    "{\"question\":\"...\",\"options\": [\"A\",\"B\",\"C\",\"D\"],\"answer\":\"...\",\"explanation\":\"...\",\"topic\":\"...\"}. "
-                    "The explanation should briefly explain why the correct answer is right."
-                )
-                mcqs = generate_items_from_source(source_text, instruction, expected_count=count, api_key=(GEMINI_MCQ_API_KEY or GEMINI_API_KEY))
 
             mcq_set_id = store_mcq_session(mcqs)
             update_mcq_session(mcq_set_id, items=mcqs, flashcards=[], source_text=source_text)
@@ -250,26 +234,17 @@ async def tool_generate(request: Request):
             }
 
         if tool == "flashcards":
-            # Prefer Gemini flashcard key when configured, otherwise fall back to OpenRouter.
-            if GEMINI_FLASHCARD_API_KEY or GEMINI_API_KEY:
-                api_key = GEMINI_FLASHCARD_API_KEY or GEMINI_API_KEY
-                instruction = (
-                    "Difficulty: easy = direct definitions; medium = conceptual Q/A; hard = nuanced, tricky, and application-focused.\n"
-                    f"Selected difficulty: {difficulty}.\n\n"
-                    f"Create exactly {count} flashcards from the provided content. "
-                    "Each item must be: {\"front\":\"...\",\"back\":\"...\",\"topic\":\"...\"}."
-                )
-                flashcards = generate_items_from_source(source_text, instruction, expected_count=count, api_key=api_key)
-            elif OPENROUTER_FLASHCARDS_API_KEY:
-                flashcards = generate_flashcards_from_source_openrouter(source_text, expected_count=count, difficulty=difficulty)
-            else:
-                instruction = (
-                    "Difficulty: easy = direct definitions; medium = conceptual Q/A; hard = nuanced, tricky, and application-focused.\n"
-                    f"Selected difficulty: {difficulty}.\n\n"
-                    f"Create exactly {count} flashcards from the provided content. "
-                    "Each item must be: {\"front\":\"...\",\"back\":\"...\",\"topic\":\"...\"}."
-                )
-                flashcards = generate_items_from_source(source_text, instruction, expected_count=count)
+            # Use Gemini flashcard key (required)
+            api_key = GEMINI_FLASHCARD_API_KEY or GEMINI_API_KEY
+            if not api_key:
+                raise RuntimeError("GEMINI_FLASHCARD_API_KEY or GEMINI_API_KEY is required for flashcard generation")
+            instruction = (
+                "Difficulty: easy = direct definitions; medium = conceptual Q/A; hard = nuanced, tricky, and application-focused.\n"
+                f"Selected difficulty: {difficulty}.\n\n"
+                f"Create exactly {count} flashcards from the provided content. "
+                "Each item must be: {\"front\":\"...\",\"back\":\"...\",\"topic\":\"...\"}."
+            )
+            flashcards = generate_items_from_source(source_text, instruction, expected_count=count, api_key=api_key)
 
             if include_images and isinstance(flashcards, list) and len(flashcards) > 0:
                 candidate_cache = {}
@@ -346,11 +321,11 @@ async def tool_generate(request: Request):
             }
 
         if tool == "fill_blanks":
-            if not OPENROUTER_FILL_IN_THE_BLANKS_KEY:
-                raise RuntimeError("OPENROUTER_FILL_IN_THE_BLANKS_KEY is missing in backend environment")
-            items = generate_fill_in_the_blanks_from_source_openrouter(
-                source_text, expected_count=count, difficulty=difficulty
-            )
+            # Use Gemini fill-in-the-blanks key (required)
+            api_key = GEMINI_FILLIN_API_KEY or GEMINI_API_KEY
+            if not api_key:
+                raise RuntimeError("GEMINI_FILLIN_API_KEY or GEMINI_API_KEY is required for fill-in-the-blanks generation")
+            items = generate_fill_in_the_blanks_from_source(source_text, expected_count=count, difficulty=difficulty, api_key=api_key)
             return {
                 "tool": tool,
                 "fillBlanks": items,
@@ -362,15 +337,11 @@ async def tool_generate(request: Request):
             }
 
         if tool == "true_false":
-            # Prefer Gemini per-tool key for true/false; fall back to Gemini global key, then OpenRouter legacy.
-            if GEMINI_TRUEANDFALSE_API_KEY or GEMINI_API_KEY:
-                tf_api_key = GEMINI_TRUEANDFALSE_API_KEY or GEMINI_API_KEY
-                items = generate_true_false_from_source(source_text, expected_count=count, difficulty=difficulty, api_key=tf_api_key)
-            elif OPENROUTER_TRUE_FALSE_KEY:
-                items = generate_true_false_from_source_openrouter(source_text, expected_count=count, difficulty=difficulty)
-            else:
-                # No provider configured
-                raise RuntimeError("No true/false provider configured in backend environment")
+            # Use Gemini per-tool key for true/false (required)
+            tf_api_key = GEMINI_TRUEANDFALSE_API_KEY or GEMINI_API_KEY
+            if not tf_api_key:
+                raise RuntimeError("GEMINI_TRUEANDFALSE_API_KEY or GEMINI_API_KEY is required for true/false generation")
+            items = generate_true_false_from_source(source_text, expected_count=count, difficulty=difficulty, api_key=tf_api_key)
             return {
                 "tool": tool,
                 "trueFalse": items,
@@ -382,27 +353,7 @@ async def tool_generate(request: Request):
             }
 
         if tool == "match_the_pair":
-            if not MATCH_THE_PAIR_API:
-                raise RuntimeError("MATCH_THE_PAIR_API is missing in backend environment")
-            sets = generate_match_the_pair_from_source_openrouter(
-                source_text,
-                expected_set_count=5,
-                expected_pairs_per_set=5,
-                difficulty=difficulty,
-            )
-            return {
-                "tool": tool,
-                "matchThePair": {
-                    "sets": sets,
-                    "setCount": 5,
-                    "pairsPerSet": 5,
-                },
-                "meta": {
-                    "difficulty": difficulty,
-                    "count": count,
-                    **source_meta,
-                },
-            }
+            raise RuntimeError("match_the_pair is not supported: no provider configured")
 
         if tool == "summary":
             summary = generate_summary_from_source(source_text)

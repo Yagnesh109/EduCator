@@ -19,27 +19,18 @@ GEMINI_STUDY_SET_MAX_TOKENS = int(os.getenv("GEMINI_STUDY_SET_MAX_TOKENS", "2200
 GEMINI_QA_MAX_TOKENS = int(os.getenv("GEMINI_QA_MAX_TOKENS", "900"))
 GEMINI_SOURCE_CHAR_LIMIT = int(os.getenv("GEMINI_SOURCE_CHAR_LIMIT", "10000"))
 GEMINI_TIMEOUT_SECONDS = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "90"))
-
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash")
-OPENROUTER_TIMEOUT_SECONDS = int(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "90"))
-OPENROUTER_FLASHCARDS_API_KEY = os.getenv("OPENROUTER_FLASHCARDS_API_KEY", "")
-OPENROUTER_VOICE_API_KEY = os.getenv("OPENROUTER_VOICE_API_KEY", "")
-OPENROUTER_SUMMARIZATION_KEY = os.getenv("OPENROUTER_SUMMARIZATION_KEY", "")
-OPENROUTER_FILL_IN_THE_BLANKS_KEY = os.getenv("OPENROUTER_FILL_IN_THE_BLANKS_KEY", "")
-OPENROUTER_QA_MAX_TOKENS = int(os.getenv("OPENROUTER_QA_MAX_TOKENS", "900"))
 GEMINI_TRUEANDFALSE_API_KEY = os.getenv("GEMINI_TRUEANDFALSE_API_KEY", "")
-MATCH_THE_PAIR_API = os.getenv("MATCH_THE_PAIR_API", "")
 
 GEMINI_VOICE_API_KEY = os.getenv("GEMINI_VOICE_API_KEY", "")
+GEMINI_FILLIN_API_KEY = os.getenv("GEMINI_FILLIN_API_KEY", "")
+GEMINI_SUMMARY_API_KEY = os.getenv("GEMINI_SUMMARY_API_KEY", "")
+GEMINI_TEXTAI_API_KEY = os.getenv("GEMINI_TEXTAI_API_KEY", "")
 
 
 def _looks_truncated(text):
     value = str(text or "").strip()
     if not value:
         return False
-    # If it ends with a word character, it's often cut off due to token limits.
-    # Don't treat '?'/'!' as truncated.
     return value[-1].isalnum()
 
 
@@ -64,7 +55,6 @@ def _is_truncated_generation(data, text):
         if finish_reason == "MAX_TOKENS":
             return True
     stripped = (text or "").rstrip()
-    # JSON object/array starts but does not close.
     if (stripped.startswith("{") and not stripped.endswith("}")) or (
         stripped.startswith("[") and not stripped.endswith("]")
     ):
@@ -79,7 +69,6 @@ def _trim_source_text(source_text):
 
 
 def call_gemini(prompt, max_output_tokens=GEMINI_MAX_TOKENS, response_mime_type="application/json", api_key=None):
-    # Allow passing a per-tool Gemini key via api_key; fallback to GEMINI_API_KEY
     key = str(api_key or GEMINI_API_KEY or "").strip()
     if not key:
         raise RuntimeError("GEMINI_API_KEY is missing in backend environment")
@@ -131,45 +120,9 @@ def call_gemini(prompt, max_output_tokens=GEMINI_MAX_TOKENS, response_mime_type=
     raise RuntimeError(last_error or "Gemini request failed")
 
 
-def call_openrouter(prompt, max_output_tokens=GEMINI_MAX_TOKENS, api_key=OPENROUTER_API_KEY):
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY is missing in backend environment")
-
-    endpoint = "https://openrouter.ai/api/v1/chat/completions"
-    payload = {
-        "model": OPENROUTER_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3,
-        "max_tokens": max_output_tokens,
-    }
-    payload_bytes = json.dumps(payload).encode("utf-8")
-    req = urlrequest.Request(
-        endpoint,
-        data=payload_bytes,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-        method="POST",
-    )
-    try:
-        with urlrequest.urlopen(req, timeout=OPENROUTER_TIMEOUT_SECONDS) as response:
-            return response.read().decode("utf-8")
-    except urlerror.HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"OpenRouter HTTP {exc.code}: {error_body}") from exc
-    except Exception as exc:
-        raise RuntimeError(f"OpenRouter request failed: {exc}") from exc
-
-
-def extract_openrouter_text(body):
-    data = json.loads(body)
-    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-    return str(content or "").strip()
-
-
 def generate_items_from_source(source_text, instruction, expected_count=10, api_key=None):
     source_text = _trim_source_text(source_text)
+
     def item_signature(item):
         if not isinstance(item, dict):
             return str(item)
@@ -236,74 +189,7 @@ def generate_items_from_source(source_text, instruction, expected_count=10, api_
     raise last_error or RuntimeError(f"Model returned {len(collected)} unique items, expected {expected_count}")
 
 
-def generate_mcqs_from_source_openrouter(source_text, expected_count=10, difficulty="medium"):
-    source_text = _trim_source_text(source_text)
-    difficulty = str(difficulty or "medium").strip().lower()
-    if difficulty not in {"easy", "medium", "hard"}:
-        difficulty = "medium"
-    instruction = (
-        "Difficulty: easy = basic recall/definitions; medium = conceptual and moderately challenging; "
-        "hard = advanced reasoning, nuanced distractors, and deeper understanding.\n"
-        f"Selected difficulty: {difficulty}.\n\n"
-        f"Create exactly {expected_count} MCQs from the provided content. "
-        "Each item must be: "
-        "{\"question\":\"...\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"answer\":\"...\",\"explanation\":\"...\",\"topic\":\"...\"}. "
-        "The explanation should briefly explain why the correct answer is right.\n"
-        "Return only a strict JSON array with no markdown fences and no extra text. "
-        "Use double quotes for all JSON keys and string values.\n\n"
-        f"Source content:\n{source_text}"
-    )
-    token_budget = max(GEMINI_MAX_TOKENS, 1800 if expected_count <= 10 else 3600)
-    body = call_openrouter(instruction, max_output_tokens=token_budget)
-    data = json.loads(body)
-    content = (
-        data.get("choices", [{}])[0]
-        .get("message", {})
-        .get("content", "")
-    )
-    text = str(content or "").strip()
-    if not text:
-        raise RuntimeError("OpenRouter returned empty MCQs response")
-    try:
-        items = extract_json_array(text)
-    except ValueError as exc:
-        raise RuntimeError(str(exc)) from exc
-    if not isinstance(items, list) or len(items) < expected_count:
-        raise RuntimeError("OpenRouter returned invalid MCQs JSON")
-    return items[:expected_count]
-
-
-def generate_flashcards_from_source_openrouter(source_text, expected_count=10, difficulty="medium"):
-    source_text = _trim_source_text(source_text)
-    difficulty = str(difficulty or "medium").strip().lower()
-    if difficulty not in {"easy", "medium", "hard"}:
-        difficulty = "medium"
-    instruction = (
-        "Difficulty: easy = direct definitions; medium = conceptual Q/A; hard = nuanced, tricky, and application-focused.\n"
-        f"Selected difficulty: {difficulty}.\n\n"
-        f"Create exactly {expected_count} flashcards from the provided content. "
-        "Each item must be: {\"front\":\"...\",\"back\":\"...\",\"topic\":\"...\"}.\n"
-        "Return only a strict JSON array with no markdown fences and no extra text. "
-        "Use double quotes for all JSON keys and string values.\n\n"
-        f"Source content:\n{source_text}"
-    )
-    token_budget = max(GEMINI_MAX_TOKENS, 1200 if expected_count <= 10 else 2800)
-    body = call_openrouter(instruction, max_output_tokens=token_budget, api_key=OPENROUTER_FLASHCARDS_API_KEY)
-    data = json.loads(body)
-    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-    text = str(content or "").strip()
-    if not text:
-        raise RuntimeError("OpenRouter returned empty flashcards response")
-    try:
-        items = extract_json_array(text)
-    except ValueError as exc:
-        raise RuntimeError(str(exc)) from exc
-    if not isinstance(items, list) or len(items) < expected_count:
-        raise RuntimeError("OpenRouter returned invalid flashcards JSON")
-    return items[:expected_count]
-
-
-def generate_fill_in_the_blanks_from_source_openrouter(source_text, expected_count=10, difficulty="medium"):
+def generate_fill_in_the_blanks_from_source(source_text, expected_count=10, difficulty="medium", api_key=None):
     source_text = _trim_source_text(source_text)
     difficulty = str(difficulty or "medium").strip().lower()
     if difficulty not in {"easy", "medium", "hard"}:
@@ -321,55 +207,13 @@ def generate_fill_in_the_blanks_from_source_openrouter(source_text, expected_cou
         "Return only a strict JSON array with no markdown fences and no extra text.\n\n"
         f"Source content:\n{source_text}"
     )
-    token_budget = max(GEMINI_MAX_TOKENS, 1800 if expected_count <= 10 else 3600)
-    body = call_openrouter(instruction, max_output_tokens=token_budget, api_key=OPENROUTER_FILL_IN_THE_BLANKS_KEY)
-    data = json.loads(body)
-    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-    text = str(content or "").strip()
-    if not text:
-        raise RuntimeError("OpenRouter returned empty fill-in-the-blanks response")
-    try:
-        items = extract_json_array(text)
-    except ValueError as exc:
-        raise RuntimeError(str(exc)) from exc
-    if not isinstance(items, list) or len(items) < expected_count:
-        raise RuntimeError("OpenRouter returned invalid fill-in-the-blanks JSON")
-    return items[:expected_count]
 
+    key = api_key or GEMINI_FILLIN_API_KEY or GEMINI_API_KEY
+    if not key:
+        raise RuntimeError("GEMINI_FILLIN_API_KEY or GEMINI_API_KEY is required for fill-in-the-blanks generation")
 
-def generate_true_false_from_source_openrouter(source_text, expected_count=10, difficulty="medium"):
-    source_text = _trim_source_text(source_text)
-    difficulty = str(difficulty or "medium").strip().lower()
-    if difficulty not in {"easy", "medium", "hard"}:
-        difficulty = "medium"
-    instruction = (
-        "Difficulty: easy = straightforward facts; medium = moderately tricky statements; hard = nuanced and subtle statements.\n"
-        f"Selected difficulty: {difficulty}.\n\n"
-        f"Create exactly {expected_count} True/False questions from the provided content.\n"
-        "Each item must be a JSON object with this exact shape:\n"
-        "{\"statement\":\"...\",\"answer\":true,\"explanation\":\"...\",\"topic\":\"...\"}\n"
-        "- The statement must be clear and factual.\n"
-        "- The answer must be a JSON boolean (true/false), not a string.\n"
-        "- The explanation must be 1-2 sentences.\n"
-        "- The topic must be a short topic label.\n"
-        "Return only a strict JSON array with no markdown fences and no extra text.\n\n"
-        f"Source content:\n{source_text}"
-    )
-    # Deprecated: legacy OpenRouter-based true/false generator. Prefer Gemini-based key.
-    token_budget = max(GEMINI_MAX_TOKENS, 1600 if expected_count <= 10 else 3400)
-    body = call_openrouter(instruction, max_output_tokens=token_budget)
-    data = json.loads(body)
-    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-    text = str(content or "").strip()
-    if not text:
-        raise RuntimeError("OpenRouter returned empty true/false response")
-    try:
-        items = extract_json_array(text)
-    except ValueError as exc:
-        raise RuntimeError(str(exc)) from exc
-    if not isinstance(items, list) or len(items) < expected_count:
-        raise RuntimeError("OpenRouter returned invalid true/false JSON")
-    return items[:expected_count]
+    items = generate_items_from_source(source_text, instruction, expected_count=expected_count, api_key=key)
+    return items
 
 
 def generate_true_false_from_source(source_text, expected_count=10, difficulty="medium", api_key=None):
@@ -391,79 +235,12 @@ def generate_true_false_from_source(source_text, expected_count=10, difficulty="
         f"Source content:\n{source_text}"
     )
 
-    # Use per-call Gemini key if provided, otherwise fallback to global GEMINI_API_KEY
     key = api_key or GEMINI_TRUEANDFALSE_API_KEY or GEMINI_API_KEY
     if not key:
         raise RuntimeError("GEMINI_TRUEANDFALSE_API_KEY or GEMINI_API_KEY is required for true/false generation")
 
     items = generate_items_from_source(source_text, instruction, expected_count=expected_count, api_key=key)
     return items
-
-
-def generate_match_the_pair_from_source_openrouter(
-    source_text,
-    expected_set_count=5,
-    expected_pairs_per_set=5,
-    difficulty="medium",
-):
-    source_text = _trim_source_text(source_text)
-    difficulty = str(difficulty or "medium").strip().lower()
-    if difficulty not in {"easy", "medium", "hard"}:
-        difficulty = "medium"
-    if not MATCH_THE_PAIR_API:
-        raise RuntimeError("MATCH_THE_PAIR_API is missing in backend environment")
-
-    instruction = (
-        "You are creating content for a 'Match the Pair' activity based on the source.\n"
-        "Difficulty: easy = obvious term/definition; medium = conceptual pairings; hard = nuanced, tricky pairings.\n"
-        f"Selected difficulty: {difficulty}.\n\n"
-        f"Create exactly {expected_set_count} sets.\n"
-        f"Each set must contain exactly {expected_pairs_per_set} pairs.\n"
-        "Pairs should be grounded in the source content.\n"
-        "Avoid near-duplicates within a set.\n\n"
-        "Return ONLY a strict JSON object with this exact shape:\n"
-        "{\n"
-        '  "sets":[\n'
-        "    {\n"
-        '      "title":"...",\n'
-        '      "pairs":[{"left":"...","right":"..."}, ...]\n'
-        "    }\n"
-        "  ]\n"
-        "}\n"
-        "No markdown fences, no extra keys, no extra text.\n\n"
-        f"Source content:\n{source_text}"
-    )
-
-    token_budget = max(GEMINI_MAX_TOKENS, 2200)
-    body = call_openrouter(instruction, max_output_tokens=token_budget, api_key=MATCH_THE_PAIR_API)
-    text = extract_openrouter_text(body)
-    if not text:
-        raise RuntimeError("OpenRouter returned empty match-the-pair response")
-    try:
-        data = extract_json_object(text)
-    except ValueError as exc:
-        raise RuntimeError(str(exc)) from exc
-
-    sets = data.get("sets") if isinstance(data, dict) else None
-    if not isinstance(sets, list) or len(sets) < expected_set_count:
-        raise RuntimeError("OpenRouter returned invalid match-the-pair JSON")
-
-    normalized_sets = []
-    for raw_set in sets[:expected_set_count]:
-        title = str((raw_set or {}).get("title") or "").strip() or "Match the Pair"
-        pairs = (raw_set or {}).get("pairs")
-        if not isinstance(pairs, list) or len(pairs) < expected_pairs_per_set:
-            raise RuntimeError("OpenRouter returned invalid match-the-pair pairs")
-        normalized_pairs = []
-        for pair in pairs[:expected_pairs_per_set]:
-            left = str((pair or {}).get("left") or "").strip()
-            right = str((pair or {}).get("right") or "").strip()
-            if not left or not right:
-                raise RuntimeError("OpenRouter returned empty match-the-pair pair values")
-            normalized_pairs.append({"left": left, "right": right})
-        normalized_sets.append({"title": title, "pairs": normalized_pairs})
-
-    return normalized_sets
 
 
 def generate_summary_from_source(source_text):
@@ -477,21 +254,17 @@ def generate_summary_from_source(source_text):
         f"Source content:\n{source_text}"
     )
 
-    if OPENROUTER_SUMMARIZATION_KEY:
-        body = call_openrouter(
-            prompt,
-            max_output_tokens=max(GEMINI_SUMMARY_MAX_TOKENS, 1200),
-            api_key=OPENROUTER_SUMMARIZATION_KEY,
-        )
-        text = extract_openrouter_text(body)
-    else:
-        body = call_gemini(
-            prompt,
-            max_output_tokens=GEMINI_SUMMARY_MAX_TOKENS,
-            response_mime_type="text/plain",
-        )
-        data = json.loads(body)
-        text = extract_gemini_text(data).strip()
+    key = GEMINI_SUMMARY_API_KEY or GEMINI_API_KEY
+    if not key:
+        raise RuntimeError("GEMINI_SUMMARY_API_KEY or GEMINI_API_KEY is required for summary generation")
+    body = call_gemini(
+        prompt,
+        max_output_tokens=GEMINI_SUMMARY_MAX_TOKENS,
+        response_mime_type="text/plain",
+        api_key=key,
+    )
+    data = json.loads(body)
+    text = extract_gemini_text(data).strip()
 
     if not text:
         raise RuntimeError("Model returned empty summary")
@@ -517,14 +290,13 @@ def generate_study_set_from_source(source_text, expected_count=10, difficulty="m
         '"flashcards":[{"front":"...","back":"...","topic":"..."}],'
         '"summary":"- ...\\n- ...\\n- ..."'
         "}\n"
-        'For each MCQ, "explanation" must briefly explain why the correct answer is correct.\n'
-        'For each MCQ, "topic" must be a short topic label.\n'
-        'For each flashcard, "topic" must be a short topic label.\n'
+        "For each MCQ, \"explanation\" must briefly explain why the correct answer is correct.\n"
+        "For each MCQ, \"topic\" must be a short topic label.\n"
+        "For each flashcard, \"topic\" must be a short topic label.\n"
         "No markdown fences and no extra keys.\n\n"
         f"Source content:\n{source_text}"
     )
 
-    # First attempt keeps latency lower. Second attempt expands output budget if truncated.
     token_budgets = [GEMINI_STUDY_SET_MAX_TOKENS, max(GEMINI_STUDY_SET_MAX_TOKENS, 5000)]
     result = None
     last_parse_error = None
@@ -588,30 +360,6 @@ def answer_question_from_source(source_text, question, api_key=None):
         text = extract_gemini_text(data).strip()
         if not text:
             raise RuntimeError("Model returned empty answer")
-        if not _looks_truncated(text):
-            return text
-        # Retry once with higher budget to avoid cut-off endings.
-        max_tokens = max(max_tokens * 2, 1200)
-    return text
-
-
-def answer_question_from_source_openrouter(source_text, question, api_key=OPENROUTER_VOICE_API_KEY):
-    source_text = _trim_source_text(source_text)
-    prompt = (
-        "You are an educational tutor. Answer the student's question using ONLY the provided study content. "
-        "If the answer is not present, clearly say it is not in the provided material. "
-        "Write a detailed answer (8-12 sentences) and ensure the final sentence ends with a period.\n\n"
-        f"Study content:\n{source_text}\n\n"
-        f"Student question:\n{question}"
-    )
-    max_tokens = max(350, OPENROUTER_QA_MAX_TOKENS)
-    for attempt in range(2):
-        body = call_openrouter(prompt, max_output_tokens=max_tokens, api_key=api_key)
-        data = json.loads(body)
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        text = str(content or "").strip()
-        if not text:
-            raise RuntimeError("OpenRouter returned empty answer")
         if not _looks_truncated(text):
             return text
         max_tokens = max(max_tokens * 2, 1200)

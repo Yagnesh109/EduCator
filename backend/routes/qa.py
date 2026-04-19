@@ -9,11 +9,10 @@ from utils.extractors import extract_docx_text, extract_pdf_text, extract_pptx_t
 router = APIRouter()
 
 from services.gemini_service import (
-    OPENROUTER_VOICE_API_KEY,
     GEMINI_VOICE_API_KEY,
+    GEMINI_TEXTAI_API_KEY,
     GEMINI_API_KEY,
     answer_question_from_source,
-    answer_question_from_source_openrouter,
 )
 
 TEMP_UPLOAD_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "temp_uploads"))
@@ -132,15 +131,18 @@ async def answer_question_from_upload(request: Request):
             return JSONResponse(content={"error": "source text is required"}, status_code=400)
 
         context = _retrieve_relevant_context(source_text, question, top_k=3)
-        # Prefer Gemini voice key when available; fallback to OpenRouter legacy voice only if configured.
-        if mode == "voice" and (GEMINI_VOICE_API_KEY or GEMINI_API_KEY):
+        # Text assistant: prefer GEMINI_TEXTAI_API_KEY, fall back to GEMINI_API_KEY.
+        if mode == "voice":
             api_key = GEMINI_VOICE_API_KEY or GEMINI_API_KEY
+            if not api_key:
+                raise RuntimeError("GEMINI_VOICE_API_KEY or GEMINI_API_KEY is required for voice assistant")
             answer = answer_question_from_source(context, question, api_key=api_key)
-        elif mode == "voice" and OPENROUTER_VOICE_API_KEY:
-            answer = answer_question_from_source_openrouter(context, question)
         else:
-            # Non-voice mode or no voice provider -> return text answer via Gemini default
-            answer = answer_question_from_source(context, question)
+            # Non-voice/text assistant path
+            api_key = GEMINI_TEXTAI_API_KEY or GEMINI_API_KEY
+            if not api_key:
+                raise RuntimeError("GEMINI_TEXTAI_API_KEY or GEMINI_API_KEY is required for text assistant")
+            answer = answer_question_from_source(context, question, api_key=api_key)
         return {"question": question, "answer": answer}
     except ValueError as exc:
         return JSONResponse(content={"error": str(exc)}, status_code=400)

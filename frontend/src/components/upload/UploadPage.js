@@ -55,10 +55,7 @@ function UploadPage({ user }) {
     user?.email?.split("@")[0] ||
     "Learner";
   const navigate = useNavigate();
-<<<<<<< HEAD
   const premium = usePremium();
-=======
->>>>>>> 5880e86 (Project ready)
   const [textValue, setTextValue] = useState("");
   const [uploadFile, setUploadFile] = useState(null);
   const [storedFileId, setStoredFileId] = useState("");
@@ -73,15 +70,11 @@ function UploadPage({ user }) {
   const [loadingStudySet, setLoadingStudySet] = useState(false);
   const [summary, setSummary] = useState("");
   const [summaryGenerating, setSummaryGenerating] = useState(false);
-<<<<<<< HEAD
   const [ttsLanguage] = useState("en");
-=======
   const [audioUrl, setAudioUrl] = useState("");
   const [audioLoading, setAudioLoading] = useState(false);
   const [exportingFormat, setExportingFormat] = useState("");
-  const [ttsLanguage] = useState("en");
   const [lastSource, setLastSource] = useState(null);
->>>>>>> 5880e86 (Project ready)
   const [ragQuestion, setRagQuestion] = useState("");
   const [ragAnswer, setRagAnswer] = useState("");
   const [ragLoading, setRagLoading] = useState(false);
@@ -98,11 +91,8 @@ function UploadPage({ user }) {
   const [flashGenerating, setFlashGenerating] = useState(false);
   const [fillBlanksGenerating, setFillBlanksGenerating] = useState(false);
   const [trueFalseGenerating, setTrueFalseGenerating] = useState(false);
-<<<<<<< HEAD
-=======
   const [matchThePairGenerating, setMatchThePairGenerating] = useState(false);
   const [savingSession, setSavingSession] = useState(false);
->>>>>>> 5880e86 (Project ready)
   const [mcqReady, setMcqReady] = useState(false);
   const [flashReady, setFlashReady] = useState(false);
   const [fillBlanksReady, setFillBlanksReady] = useState(false);
@@ -112,7 +102,8 @@ function UploadPage({ user }) {
   const [flashPayload, setFlashPayload] = useState(null);
   const [fillBlanksPayload, setFillBlanksPayload] = useState(null);
   const [trueFalsePayload, setTrueFalsePayload] = useState(null);
-<<<<<<< HEAD
+  const [matchThePairPayload, setMatchThePairPayload] = useState(null);
+
   const handleOpenYoutubeGuidePage = () => {
     if (!hasSource) {
       toast.info("Add a source first");
@@ -125,9 +116,6 @@ function UploadPage({ user }) {
     }
     navigate("/youtube-guide");
   };
-=======
-  const [matchThePairPayload, setMatchThePairPayload] = useState(null);
->>>>>>> 5880e86 (Project ready)
 
   const persistSourceSession = (sourceType, sourcePreview, sourceText = "", sourceFileId = "", sourceFileName = "") => {
     let existing = {};
@@ -181,11 +169,8 @@ function UploadPage({ user }) {
     setFlashPayload(null);
     setFillBlanksPayload(null);
     setTrueFalsePayload(null);
-<<<<<<< HEAD
-=======
     setMatchThePairPayload(null);
     setAudioUrl("");
->>>>>>> 5880e86 (Project ready)
   };
 
   useEffect(() => {
@@ -221,15 +206,12 @@ function UploadPage({ user }) {
   const hasText = textValue.trim().length > 0;
   const hasFile = Boolean(uploadFile) || Boolean(storedFileId);
   const canGenerate = hasText || hasFile;
-<<<<<<< HEAD
-=======
   const hasResults =
     mcqs.length > 0 ||
     flashcards.length > 0 ||
     fillBlanks.length > 0 ||
     trueFalse.length > 0 ||
     matchThePair.length > 0;
->>>>>>> 5880e86 (Project ready)
   const hasSummary = summary.trim().length > 0;
   const hasSource =
     sources.length > 0 ||
@@ -1164,7 +1146,6 @@ function UploadPage({ user }) {
     navigate("/true-false", { state: trueFalsePayload });
   };
 
-<<<<<<< HEAD
   const handleUpgrade = (featureKey) => {
     const required = requiredPlanForFeature(featureKey);
     if (required === "free") return;
@@ -1182,11 +1163,11 @@ function UploadPage({ user }) {
     if (trueFalseReady) return handleViewTrueFalse();
     if (!premium.canUse("true_false")) return handleUpgrade("true_false");
     return handleGenerateTrueFalse();
-=======
+  };
+
   const handleViewMatchThePair = () => {
     if (!matchThePairPayload) return;
     navigate("/match-the-pair", { state: matchThePairPayload });
->>>>>>> 5880e86 (Project ready)
   };
 
   const handleViewSummary = () => {

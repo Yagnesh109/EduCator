@@ -18,10 +18,10 @@ REFILL_POOL_SIZE = int(os.getenv("REFILL_POOL_SIZE", "10"))
 
 from services.gemini_service import (
     GEMINI_API_KEY,
-    GEMINI_MCQ_API_KEY,
-    GEMINI_FLASHCARD_API_KEY,
+    GROQ_MCQ_API_KEY,
+    GROQ_FLASHCARD_API_KEY,
     GEMINI_FILLIN_API_KEY,
-    GEMINI_TRUEANDFALSE_API_KEY,
+    GROQ_TRUEANDFALSE_API_KEY,
     generate_items_from_source,
     generate_fill_in_the_blanks_from_source,
     generate_true_false_from_source,
@@ -516,9 +516,9 @@ async def generate_mcqs(request: Request):
         count = 10
         source_text, source_meta = await get_source_text_from_request(request)
         difficulty = str(source_meta.get("difficulty", "medium")).strip().lower() or "medium"
-        mcq_api_key = GEMINI_MCQ_API_KEY or GEMINI_API_KEY
+        mcq_api_key = GROQ_MCQ_API_KEY or GEMINI_API_KEY
         if not mcq_api_key:
-            raise RuntimeError("GEMINI_MCQ_API_KEY or GEMINI_API_KEY is required for MCQ generation")
+            raise RuntimeError("GROQ_MCQ_API_KEY or GEMINI_API_KEY is required for MCQ generation")
         mcqs = _normalize_mcq_items(generate_items_from_source(source_text, (
             "Difficulty: easy = basic recall/definitions; medium = conceptual and moderately challenging; "
             "hard = advanced reasoning, nuanced distractors, and deeper understanding.\n"
@@ -545,9 +545,9 @@ async def generate_flashcards(request: Request):
         count = 10
         source_text, source_meta = await get_source_text_from_request(request)
         difficulty = str(source_meta.get("difficulty", "medium")).strip().lower() or "medium"
-        api_key = GEMINI_FLASHCARD_API_KEY or GEMINI_API_KEY
+        api_key = GROQ_FLASHCARD_API_KEY or GEMINI_API_KEY
         if not api_key:
-            raise RuntimeError("GEMINI_FLASHCARD_API_KEY or GEMINI_API_KEY is required for flashcard generation")
+            raise RuntimeError("GROQ_FLASHCARD_API_KEY or GEMINI_API_KEY is required for flashcard generation")
         flashcard_instruction = (
             "Difficulty: easy = direct definitions; medium = conceptual Q/A; hard = nuanced, tricky, and application-focused.\n"
             f"Selected difficulty: {difficulty}.\n\n"
@@ -589,9 +589,9 @@ async def generate_true_false(request: Request):
         count = 10
         source_text, source_meta = await get_source_text_from_request(request)
         difficulty = str(source_meta.get("difficulty", "medium")).strip().lower() or "medium"
-        api_key = GEMINI_TRUEANDFALSE_API_KEY or GEMINI_API_KEY
+        api_key = GROQ_TRUEANDFALSE_API_KEY or GEMINI_API_KEY
         if not api_key:
-            raise RuntimeError("GEMINI_TRUEANDFALSE_API_KEY or GEMINI_API_KEY is required for true/false generation")
+            raise RuntimeError("GROQ_TRUEANDFALSE_API_KEY or GEMINI_API_KEY is required for true/false generation")
         items = generate_true_false_from_source(source_text, expected_count=count, difficulty=difficulty, api_key=api_key)
         return {"trueFalse": items}
     except ValueError as exc:

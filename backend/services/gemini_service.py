@@ -9,8 +9,8 @@ from utils.mcq_utils import extract_json_array, extract_json_object
 
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MCQ_API_KEY = os.getenv("GEMINI_MCQ_API_KEY", "")
-GEMINI_FLASHCARD_API_KEY = os.getenv("GEMINI_FLASHCARD_API_KEY", "")
+GROQ_MCQ_API_KEY = os.getenv("GROQ_MCQ_API_KEY", "")
+GROQ_FLASHCARD_API_KEY = os.getenv("GROQ_FLASHCARD_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_MAX_RETRIES = int(os.getenv("GEMINI_MAX_RETRIES", "1"))
 GEMINI_MAX_TOKENS = int(os.getenv("GEMINI_MAX_TOKENS", "800"))
@@ -19,7 +19,7 @@ GEMINI_STUDY_SET_MAX_TOKENS = int(os.getenv("GEMINI_STUDY_SET_MAX_TOKENS", "2200
 GEMINI_QA_MAX_TOKENS = int(os.getenv("GEMINI_QA_MAX_TOKENS", "900"))
 GEMINI_SOURCE_CHAR_LIMIT = int(os.getenv("GEMINI_SOURCE_CHAR_LIMIT", "10000"))
 GEMINI_TIMEOUT_SECONDS = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "90"))
-GEMINI_TRUEANDFALSE_API_KEY = os.getenv("GEMINI_TRUEANDFALSE_API_KEY", "")
+GROQ_TRUEANDFALSE_API_KEY = os.getenv("GROQ_TRUEANDFALSE_API_KEY", "")
 
 GEMINI_VOICE_API_KEY = os.getenv("GEMINI_VOICE_API_KEY", "")
 GEMINI_FILLIN_API_KEY = os.getenv("GEMINI_FILLIN_API_KEY", "")
@@ -249,9 +249,9 @@ def generate_true_false_from_source(source_text, expected_count=10, difficulty="
         f"Source content:\n{source_text}"
     )
 
-    key = api_key or GEMINI_TRUEANDFALSE_API_KEY or GEMINI_API_KEY
+    key = api_key or GROQ_TRUEANDFALSE_API_KEY or GEMINI_API_KEY
     if not key:
-        raise RuntimeError("GEMINI_TRUEANDFALSE_API_KEY or GEMINI_API_KEY is required for true/false generation")
+        raise RuntimeError("GROQ_TRUEANDFALSE_API_KEY or GEMINI_API_KEY is required for true/false generation")
 
     items = generate_items_from_source(source_text, instruction, expected_count=expected_count, api_key=key)
     return items

@@ -5,10 +5,10 @@ from routes.generate import get_source_text_from_request
 from services.mcq_session import store_mcq_session, update_mcq_session, get_mcq_session
 from services.gemini_service import (
     GEMINI_API_KEY,
-    GEMINI_MCQ_API_KEY,
-    GEMINI_FLASHCARD_API_KEY,
+    GROQ_MCQ_API_KEY,
+    GROQ_FLASHCARD_API_KEY,
     GEMINI_FILLIN_API_KEY,
-    GEMINI_TRUEANDFALSE_API_KEY,
+    GROQ_TRUEANDFALSE_API_KEY,
     GEMINI_VOICE_API_KEY,
     GEMINI_SUMMARY_API_KEY,
     GEMINI_TEXTAI_API_KEY,
@@ -234,7 +234,7 @@ async def tool_generate(request: Request):
         if tool == "mcq":
             # Decide provider and track it in response meta for debugging
             provider = ""
-            if GEMINI_MCQ_API_KEY or GEMINI_API_KEY:
+            if GROQ_MCQ_API_KEY or GEMINI_API_KEY:
                 provider = "gemini"
                 instruction = (
                     "Difficulty: easy = basic recall/definitions; medium = conceptual and moderately challenging; "
@@ -245,9 +245,9 @@ async def tool_generate(request: Request):
                     "{\"question\":\"...\",\"options\": [\"A\",\"B\",\"C\",\"D\"],\"answer\":\"...\",\"explanation\":\"...\",\"topic\":\"...\"}. "
                     "The explanation should briefly explain why the correct answer is right."
                 )
-                mcq_api_key = GEMINI_MCQ_API_KEY or GEMINI_API_KEY
+                mcq_api_key = GROQ_MCQ_API_KEY or GEMINI_API_KEY
                 if not mcq_api_key:
-                    raise RuntimeError("GEMINI_MCQ_API_KEY or GEMINI_API_KEY is required for MCQ generation")
+                    raise RuntimeError("GROQ_MCQ_API_KEY or GEMINI_API_KEY is required for MCQ generation")
                 mcqs = generate_items_from_source(source_text, instruction, expected_count=count, api_key=mcq_api_key)
 
             mcq_set_id = store_mcq_session(mcqs)
@@ -266,9 +266,9 @@ async def tool_generate(request: Request):
 
         if tool == "flashcards":
             # Use Gemini flashcard key (required)
-            api_key = GEMINI_FLASHCARD_API_KEY or GEMINI_API_KEY
+            api_key = GROQ_FLASHCARD_API_KEY or GEMINI_API_KEY
             if not api_key:
-                raise RuntimeError("GEMINI_FLASHCARD_API_KEY or GEMINI_API_KEY is required for flashcard generation")
+                raise RuntimeError("GROQ_FLASHCARD_API_KEY or GEMINI_API_KEY is required for flashcard generation")
             instruction = (
                 "Difficulty: easy = direct definitions; medium = conceptual Q/A; hard = nuanced, tricky, and application-focused.\n"
                 f"Selected difficulty: {difficulty}.\n\n"
@@ -369,9 +369,9 @@ async def tool_generate(request: Request):
 
         if tool == "true_false":
             # Use Gemini per-tool key for true/false (required)
-            tf_api_key = GEMINI_TRUEANDFALSE_API_KEY or GEMINI_API_KEY
+            tf_api_key = GROQ_TRUEANDFALSE_API_KEY or GEMINI_API_KEY
             if not tf_api_key:
-                raise RuntimeError("GEMINI_TRUEANDFALSE_API_KEY or GEMINI_API_KEY is required for true/false generation")
+                raise RuntimeError("GROQ_TRUEANDFALSE_API_KEY or GEMINI_API_KEY is required for true/false generation")
             items = generate_true_false_from_source(source_text, expected_count=count, difficulty=difficulty, api_key=tf_api_key)
             return {
                 "tool": tool,

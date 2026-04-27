@@ -76,9 +76,9 @@ EduCator turns uploaded study content into practice material (MCQs, flashcards, 
 - Provider migration: removed OpenRouter usage and now use Google Gemini via a single service client (`backend/services/gemini_service.py`).
 - Per-tool API keys: the backend supports dedicated environment variables for each tool to limit blast radius and monitor usage:
   - `GEMINI_API_KEY` (global fallback)
-  - `GEMINI_MCQ_API_KEY`
-  - `GEMINI_FLASHCARD_API_KEY`
-  - `GEMINI_TRUEANDFALSE_API_KEY`
+  - `GROQ_MCQ_API_KEY`
+  - `GROQ_FLASHCARD_API_KEY`
+  - `GROQ_TRUEANDFALSE_API_KEY`
   - `GEMINI_VOICE_API_KEY`
   - `GEMINI_FILLIN_API_KEY`
   - `GEMINI_SUMMARY_API_KEY`
